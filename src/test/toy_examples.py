@@ -1,6 +1,7 @@
 import os,sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 
+# general libraries
 import time
 import numpy as np
 import argparse
@@ -18,39 +19,25 @@ import jax.numpy as jnp
 from numpyro.infer import Predictive
 import numpyro.distributions as dist
 
+# Modules
 from model.gp import GP, exp_kernel1, agg_kernel_grid
 from model.vae import VAE
 from model.inference import Inference
 
 
-# example dataset for x in [0,1] -- y = x^3 + noise
-def example_cubic(rng_key, n, x, noise=0.1, plot_y=True):
+# y = x^3 + noise
+def example_cubic(rng_key, n, x, noise=0, plot_y=True):
      rng_key, rng_key_y = random.split(rng_key)
 
-     # mask = jnp.zeros(n, dtype=bool).at[obs_idx].set(True)
-     # unobs_idx = jnp.arange(n)[~mask]
-
      y = jnp.power(x, 3) + random.normal(rng_key_y, shape=(n, )) * noise
-     # y_filtered = ops.index_update(y, unobs_idx, np.NaN)
 
      ground_truth = {"x":np.arange(0,1,0.001), 
                     "y": np.arange(0,1,0.001)**3}
 
-     # if plot_y:
-     #      plt.figure()
-     #      plt.plot(ground_truth["x"], 
-     #                ground_truth["y"], 
-     #                label="y=x^3+noise", c="orange")
-     #      plt.scatter(x, y, c="lightgray", label="unobserved")
-     #      # plt.scatter(x, y_filtered, color="orange", label="observed")
-     #      plt.legend(loc="upper left")  
-     #      plt.show()
-     #      plt.close()
-
      return ground_truth, y
 
-# y = sin(x/0.1)
-def example_sin(rng_key, n, x, noise=0.1, plot_y=True):
+# trig function
+def example_trig(rng_key, n, x, noise=0, plot_y=True):
 
      def func(x):
           return (
@@ -80,48 +67,51 @@ def example_sin(rng_key, n, x, noise=0.1, plot_y=True):
 
      return ground_truth, y
 
-def example_gp(rng_key, n, x, plot_y=True):
-     # we use the default argument in GP
-     # obs_idx = jnp.asarray(obs_idx)
-     # mask = jnp.zeros(n, dtype=bool).at[obs_idx].set(True)
-     # unobs_idx = jnp.arange(n)[~mask]
-
-     gp_y = GP(kernel=exp_kernel1)
+# draws from GP
+def example_gp(rng_key, n, x, noise=0, plot_y=True):
+     # we use the default kwargs in GP apart from noise
+     gp_y = GP(kernel=exp_kernel1, noise=noise)
      y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=gp_y.ls, x=x)["y"][0]
-     # y_filtered = ops.index_update(y, unobs_idx, np.NaN)
 
-     # 1000 represents number of points to make between x.min and x.max
+     # smoothing for plotting with spline
+     # 40 represents number of points to make between x.min and x.max
      x_new = np.linspace(x.min(), x.max(), 40) 
      spl = make_interp_spline(x, y, k=3)  # type: BSpline
      power_smooth = spl(x_new)
      ground_truth = {"x":x_new, 
                     "y": power_smooth}
 
-     # if plot_y:
-     #      plt.figure()
-     #      plt.plot(ground_truth["x"], 
-     #                ground_truth["y"], 
-     #                label="y=gp+noise")
-     #      plt.scatter(x, y, color="lightgray", label="unobserved")
-     #      # plt.scatter(x, y_filtered, color="orange", label="observed")
-     #      plt.legend(loc="upper left")  
-     #      plt.show()
-     #      plt.close()
-
      return ground_truth, y
      
-def main(args, example_func):
+def main(args, example, dat_noise=0):
+     """ Plot posterior predictions for varying size of unserved locations
+     with index ranging from 1, 10, 100, 200 for a total of 300 (default) 
+     dense grid over [0,1].
+     args: namespace, args of GP, VAE and Inference
+     example: string, example function used to generate data
+     dat_noise: float, added noise to generated data"""
+
      assert args.d is 1
-     # train VAE with n points
-     x = jnp.arange(0, 1, 1/args.n)
 
      if args.kernel is "exponential":
           kernel = exp_kernel1
      else:
-          raise Warning("Othr kernels are not implemented")
+          raise NotImplementedError
      
+     if example is "cubic":
+          example_func = example_cubic
+     elif example is "trig":
+          example_func = example_trig
+     elif example is "gp":
+          example_func = example_gp
+     else:
+          raise NotImplementedError
+
+     # n points over [0,1]
+     x = jnp.arange(0, 1, 1/args.n)
+
      # VAE training
-     gp = GP(kernel=kernel, var=args.var, noise=args.noise)
+     gp = GP(kernel=kernel, var=args.var, noise=args.noise) # ls is random in training
      vae = VAE(
           gp,
           args.hidden_dims, # list
@@ -136,23 +126,23 @@ def main(args, example_func):
           args.seed)
      decoder, decoder_params = vae.fit()
 
-     # context points are 1, 10, 100 
+     # context points are 1, 10, 100, 200
      obs_idx_dict = {}
      obs_idx_dict['1'] = [100]
      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
-     obs_idx_dict['100'] = list(rd.sample(np.arange(300).tolist(), k=100))
-     obs_idx_dict['200'] = list(rd.sample(np.arange(300).tolist(), k=200))
+     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+     obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
 
      rng_key = random.PRNGKey(args.seed+1)
 
      # generate data for inference
-     ground_truth, y = example_func(rng_key, args.n, x)
+     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
 
      # initialise the Inference object
      inference = Inference(
           decoder, decoder_params,
           args.z_dim,
-          x, None,
+          x, None, # None for generated data, y_filtered
           args.obs_idx,
           args.mcmc_args,
           args.seed,
@@ -161,7 +151,7 @@ def main(args, example_func):
 
      plt.figure(figsize=(15, 20))
 
-
+     # Inference
      for i, item in enumerate(obs_idx_dict.items()):
           print(i)
           k, obs_idx = item
@@ -180,10 +170,12 @@ def main(args, example_func):
           prior_pred, pred = inference.fit(plot=False)
 
           # plot
+          ## prior
           # plt.subplot(3,2,2*i+1)
           # inference.plot_prediction(prior_pred)
           # plt.title('Prior-'+k)
 
+          ## posterior
           # plt.subplot(3,2,2*i+2)
           plt.subplot(2,2,i+1)
           inference.plot_prediction(pred)
@@ -191,7 +183,7 @@ def main(args, example_func):
      
      plt.tight_layout()
      # plt.show()
-     plt.savefig('plots/test_example_sin.png')
+     plt.savefig('plots/test_example_{}.png'.format(example))
      plt.close()
 
 
@@ -219,7 +211,7 @@ def args_parser():
                          type=int, help="size of minibatch")
      parser.add_argument("--learning-rate", default=1.0e-3, 
                          type=float)
-     parser.add_argument("--num-epochs", default=20, 
+     parser.add_argument("--num-epochs", default=50, 
                          type=int)
      parser.add_argument("--num-train", default=1000, 
                          type=int)
@@ -231,7 +223,7 @@ def args_parser():
      # MCMC
      parser.add_argument("--obs-idx", default=[54, 60, 100],
                          type=list,
-                         help="dimension of hidden layers for encoder/decoder")
+                         help="index of observed locations")
 
      parser.add_argument("--mcmc-args", default={"num_samples": 1000, 
                                                   "num_warmup": 1000,
@@ -247,4 +239,4 @@ def args_parser():
 if __name__ == "__main__":
 
      args = args_parser()
-     main(args, example_sin)
+     main(args, "trig")

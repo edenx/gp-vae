@@ -43,9 +43,9 @@ class Inference:
           self.rng_key = random.PRNGKey(seed)
           self.ground_truth = ground_truth
      
-     # @partial(jit, static_argnums=(0,))
+     # @partial(jit, static_argnums=(0,)) # leakage in tracer -- how to fix?
      def regression(self, y=None, obs_idx=None):
-          # decoder_nn = vae_decoder(args["hidden_dim1"], args["hidden_dim2"], x.shape[0])
+
           sigma = numpyro.sample("noise", dist.LogNormal(0.0, 1.0))
           z = numpyro.sample("z", 
                               dist.Normal(jnp.zeros(self.z_dim), jnp.ones(self.z_dim)))

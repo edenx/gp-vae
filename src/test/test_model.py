@@ -23,7 +23,7 @@ from model.gp import GP, exp_kernel1, agg_kernel_grid
 from model.vae import VAE
 from model.inference import Inference
 
-from toy_examples import example_cubic, example_sin, example_gp
+from toy_examples import example_cubic, example_trig, example_gp
 
 # Test GP ----------------------------------------------------------------
 def test_GP(

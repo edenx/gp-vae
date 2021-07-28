@@ -13,7 +13,7 @@ from numpyro.diagnostics import hpdi
 from functools import partial
 
 
-# util functions
+# kernel functions
 @jit
 def exp_kernel1(x, z, var, ls, noise, jitter=1.0e-6):
 
@@ -76,9 +76,7 @@ def agg_kernel_grid(rng_key,
 
     return agg__kernel_v2(_x, _x) / (m ** 2)
 
-
-
-
+# may want to rewrite this to include spatial dim 2
 class GP:
      def __init__(
           self, 
@@ -89,21 +87,12 @@ class GP:
           ):
 
           self.kernel = kernel
-          # may want to change the dictionary to separate variables later
           self.var = var
           self.noise = noise
           self.ls = ls
      
      def sample(self, ls, x, y=None):
-          # if self.random_ls:
-          #      # update ls of GP
-          #      self.kernel_args["ls"] = numpyro.sample(
-          #           "ls", 
-          #           dist.Beta(0.2, 1), )
-
-          # compute kernel
-          # if ls is None:
-          #      ls = self.ls
+          
           k = self.kernel(x, x, self.var, ls, self.noise)
 
           # sample Y according to the standard gaussian process formula
@@ -112,10 +101,3 @@ class GP:
                dist.MultivariateNormal(loc=jnp.zeros(x.shape[0]), covariance_matrix=k), 
                obs=y
           )
-
-          """ noise and small length scale cannot be distinguished
-               the posterior is better for smooth enough functions
-               by using samplese with different lengthscale per train set
-               the training is more efficient, and better prior can be obtained
-               (perhaps the lengthscale info is better encoded in the decoder)
-          """

@@ -31,9 +31,6 @@ class VAE:
           num_train,
           num_test,
           x,
-          # y, 
-          # ground_truth,
-          # obs_idx,
           seed=0,
           ):
           
@@ -52,12 +49,7 @@ class VAE:
           
           # Predictive function for sampling GP training set
           self.gp_predictive = None
-          self.svi = None
-
-          # self.y = y 
-          # self.ground_truth = ground_truth
-          # self.obs_idx = obs_idx          
-
+          self.svi = None       
      
      # for loop within stax.serial? -- general way of stacking?
      def vae_encoder(self):
@@ -161,16 +153,13 @@ class VAE:
 
           # initialise with a sample batch
           sample_batch = self.gp_predictive(rng_key=rng_key_samp, ls=0.1, x=self.x)
-          # debug why VAE is not training properly
           
           svi_state = self.svi.init(rng_key_init, sample_batch['y'])
-          # print(svi_state)
           test_loss_list = []
 
           for i in range(self.num_epochs):
                rng_key, rng_key_train, rng_key_test = random.split(rng_key, 3)
                t_start = time.time()
-               # num_train, train_idx = train_init() 
 
                _, svi_state = self.epoch_train(rng_key_train, svi_state)
                test_loss = self.eval_test(rng_key_test, svi_state)
@@ -190,12 +179,6 @@ class VAE:
                plt.show()
                plt.close()
 
-          # # make prerdiction for y with current decoder------------------------
-          # self.fit(decoder_nn[1], self.svi.get_params(svi_state)["decoder$params"])
-
-          
-          # we can add prediction for sin function 
-          
-          return decoder_nn[1], self.svi.get_params(svi_state)["decoder$params"]
           # decoder and optimal parameters for decoder
+          return decoder_nn[1], self.svi.get_params(svi_state)["decoder$params"]
           
