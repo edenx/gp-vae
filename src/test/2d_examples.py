@@ -213,21 +213,21 @@ def args_parser():
 
 if __name__ == "__main__":
 
-     # n = 25 # default in arg parser
-     # d = 2 
-     # grid = jnp.arange(0, 1, 1/n)
-     # rng_key = random.PRNGKey(0)
+     n = 25 # default in arg parser
+     d = 2 
+     grid = jnp.arange(0, 1, 1/n)
+     rng_key = random.PRNGKey(0)
 
-     # if d==1:
-     #      x = grid
-     #      # print(x.shape)
-     # elif d==2:
-     #      u, v = jnp.meshgrid(grid, grid)
-     #      x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
-     # else:
-     #      raise NotImplementedError
+     if d==1:
+          x = grid
+          # print(x.shape)
+     elif d==2:
+          u, v = jnp.meshgrid(grid, grid)
+          x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
+     else:
+          raise NotImplementedError
 
-     # example_gp2(rng_key, n, x, noise=0.001)
+     example_gp2(rng_key, n, x)
 
-     args = args_parser()
-     main(args, "gp2")
+     # args = args_parser()
+     # main(args, "gp2")
