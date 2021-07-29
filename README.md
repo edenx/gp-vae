@@ -17,15 +17,15 @@ Use trained decoder as a non-linear push-forawrd function of the prior (std MVN)
 
 # TODO
 Several extensions to be made
-- [] GP: 
+- [ ] GP: 
      - [x] Better implementation of base kernel for both dim 1 and dim 2
-     - [] Extend current working examples to aggregated kernel
-     - [] Write a class for kernel?
-- [] VAE:
-     - [] Instead of using `stax`, try other alternatives for looping over hidden layers
-     - [] Experiment with other architecture (curernt works well for simple smooth functions)
-- [] Inference:
-     - [] How to better facilitate distinguishing 'lengthscale' (roughly the same idea as GP, but we do not have an explicit variable to model it) and noise in the data? 
-- [] Benchmark:
-     - [] Add SVGP as benchmark for posterior prediction. 
-     - []Try Neural process as well?
+     - [ ] Extend current working examples to aggregated kernel
+     - [ ] Write a class for kernel?
+- [ ] VAE:
+     - [ ] Instead of using `stax`, try other alternatives for looping over hidden layers
+     - [ ] Experiment with other architecture (curernt works well for simple smooth functions)
+- [ ] Inference:
+     - [ ] How to better facilitate distinguishing 'lengthscale' (roughly the same idea as GP, but we do not have an explicit variable to model it) and noise in the data? 
+- [ ] Benchmark:
+     - [ ] Add SVGP as benchmark for posterior prediction. 
+     - [ ]Try Neural process as well?
