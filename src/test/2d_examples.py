@@ -120,9 +120,11 @@ def main(args, example, dat_noise=0.001):
           )
 
      # plot ground truth
-     plt.figure()
+     plt.figure(figsize=(15/2, 25/4))
      inference.plot_prediction2(y[None, :])
-     plt.show()
+     plt.title('Ground truth')
+     # plt.show()
+     plt.savefig('src/test/plots/test_example_gp2_ground_truth.png'.format(example))
      plt.close()
 
      plt.figure(figsize=(15, 25))
