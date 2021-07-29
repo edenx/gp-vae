@@ -24,66 +24,36 @@ from model.gp import GP, exp_kernel2, agg_kernel_grid
 from model.vae import VAE
 from model.inference import Inference
 
-
-# y = x^3 + noise
-def example_cubic(rng_key, n, x, noise=0, plot_y=True):
-     rng_key, rng_key_y = random.split(rng_key)
-
-     y = jnp.power(x, 3) + random.normal(rng_key_y, shape=(n, )) * noise
-
-     ground_truth = {"x":np.arange(0,1,0.001), 
-                    "y": np.arange(0,1,0.001)**3}
-
-     return ground_truth, y
-
-# trig function
-def example_trig(rng_key, n, x, noise=0, plot_y=True):
-
-     def func(x):
-          return (
-               np.sin(x * 3 * 3.14) 
-               + 0.3 * np.cos(x * 9 * 3.14) 
-               + 0.5 * np.sin(x * 7 * 3.14))
-
-     rng_key, rng_key_y = random.split(rng_key)
-
-     # mask = jnp.zeros(n, dtype=bool).at[obs_idx].set(True)
-     # unobs_idx = jnp.arange(n)[~mask]
-
-     y = func(x) + random.normal(rng_key_y, shape=(n, )) * noise
-     # y_filtered = ops.index_update(y, unobs_idx, np.NaN)
-
-     ground_truth = {"x":np.arange(0,1,0.001), 
-                    "y": func(np.arange(0,1,0.001))}
-     # if plot_y:
-     #      plt.figure()
-     #      plt.plot(ground_truth["x"], 
-     #                ground_truth["y"], c="orange")
-     #      plt.scatter(x, y, c="lightgray", label="unobserved")
-     #      # plt.scatter(x, y_filtered, color="orange", label="observed")
-     #      plt.legend(loc="upper left")  
-     #      plt.show()
-     #      plt.close()
-
-     return ground_truth, y
-
 # draws from GP
-def example_gp(rng_key, n, x, noise=0, plot_y=True):
+def example_gp2(rng_key, n, x, noise=0.001, plot_y=True):
      # we use the default kwargs in GP apart from noise
-     gp_y = GP(kernel=exp_kernel1, noise=noise)
-     y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=gp_y.ls, x=x)["y"][0]
+     gp_y = GP(kernel=exp_kernel2, noise=noise, d=2)
+     y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=0.01, x=x)["y"][0]
 
-     # smoothing for plotting with spline
-     # 40 represents number of points to make between x.min and x.max
-     x_new = np.linspace(x.min(), x.max(), 40) 
-     spl = make_interp_spline(x, y, k=3)  # type: BSpline
-     power_smooth = spl(x_new)
-     ground_truth = {"x": x_new, 
-                    "y": power_smooth}
+     ground_truth = None
+     # {'x': x, 'y': y}
+     
+     if plot_y:
+          plt.figure()
+          plt.imshow(
+               y.reshape((n, n)), 
+               cmap='viridis',
+               interpolation='none', 
+               extent=[0,1,0,1],
+               origin='lower')
+          plt.show()
+          plt.close()
+
+          # plt.figure()
+          # sns.set_palette('viridis')
+          # sns.heatmap(y.reshape((n, n)))
+          # plt.show()
+          # plt.close()
 
      return ground_truth, y
-     
-def main(args, example, dat_noise=0):
+
+    
+def main(args, example, dat_noise=0.001):
      """ Plot posterior predictions for varying size of unserved locations
      with index ranging from 1, 10, 100, 200 for a total of 300 (default) 
      dense grid over [0,1].
@@ -91,26 +61,22 @@ def main(args, example, dat_noise=0):
      example: string, example function used to generate data
      dat_noise: float, added noise to generated data"""
 
-     assert args.d is 1
+     assert args.d is 2
 
      if args.kernel == "exponential2":
           kernel = exp_kernel2
-     # elif args.kernel == "exponential1":
-     #      kernel = exp_kernel1
      else:
           raise NotImplementedError
      
-     if example == "cubic":
-          example_func = example_cubic
-     elif example == "trig":
-          example_func = example_trig
-     elif example == "gp":
-          example_func = example_gp
+     if example == "gp2":
+          example_func = example_gp2
      else:
           raise NotImplementedError
 
-     # n points over [0,1]
-     x = jnp.arange(0, 1, 1/args.n)
+     # n by n grid over [0,1]x[0,1]
+     grid = jnp.arange(0, 1, 1/args.n)
+     u, v = jnp.meshgrid(grid, grid)
+     x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
 
      # VAE training
      gp = GP(kernel=kernel, var=args.var, noise=args.noise, d=args.d) # ls is random in training
@@ -118,7 +84,7 @@ def main(args, example, dat_noise=0):
           gp,
           args.hidden_dims, # list
           args.z_dim, # bottleneck
-          args.n,
+          args.n**2, # dim==2
           args.batch_size, 
           args.learning_rate,
           args.num_epochs,
@@ -130,28 +96,36 @@ def main(args, example, dat_noise=0):
 
      # context points are 1, 10, 100, 200
      obs_idx_dict = {}
-     obs_idx_dict['1'] = [100]
-     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
-     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
-     obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n**2).tolist(), k=100))
+     obs_idx_dict['300'] = (obs_idx_dict['100'] 
+                              + list(rd.sample(np.arange(args.n**2).tolist(), k=200)))
+     obs_idx_dict['700'] = (obs_idx_dict['300'] 
+                              + list(rd.sample(np.arange(args.n**2).tolist(), k=400)))
+     obs_idx_dict['1200'] = (obs_idx_dict['700'] 
+                              + list(rd.sample(np.arange(args.n**2).tolist(), k=500)))
 
      rng_key = random.PRNGKey(args.seed+1)
 
      # generate data for inference
-     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
-
+     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise, plot_y=False)
      # initialise the Inference object
      inference = Inference(
           decoder, decoder_params,
-          args.z_dim, args.d,
-          x, None, # None for generated data, y_filtered
-          args.obs_idx,
+          args.z_dim, args.d, # n locs on each axis
+          x, y, # None for generated data, y_filtered
+          obs_idx_dict['1200'],
           args.mcmc_args,
           args.seed,
           ground_truth
           )
 
-     plt.figure(figsize=(15, 20))
+     # plot ground truth
+     plt.figure()
+     inference.plot_prediction2(y[None, :])
+     plt.show()
+     plt.close()
+
+     plt.figure(figsize=(15, 25))
 
      # Inference
      for i, item in enumerate(obs_idx_dict.items()):
@@ -163,7 +137,7 @@ def main(args, example, dat_noise=0):
           mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
           unobs_idx = jnp.arange(args.n)[~mask]
           y_filtered = ops.index_update(y, unobs_idx, np.NaN)
-
+          
           # update observation locations
           inference.obs_idx = obs_idx
           inference.y = y_filtered
@@ -171,9 +145,15 @@ def main(args, example, dat_noise=0):
           # obtain predictions
           prior_pred, pred = inference.fit(plot=False)
 
-          ## posterior
-          plt.subplot(2,2,i+1)
-          inference.plot_prediction(pred)
+          # plot
+          ## prior
+          plt.subplot(4,2,2*i+1)
+          inference.plot_prediction2(prior_pred)
+          plt.title('Prior-'+k)
+
+          # posterior
+          plt.subplot(4,2,2*i+2)
+          inference.plot_prediction2(pred)        
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
@@ -184,7 +164,7 @@ def main(args, example, dat_noise=0):
 def args_parser():
      parser = argparse.ArgumentParser(description="VAE test")
      # GP
-     parser.add_argument("--d", default=1, 
+     parser.add_argument("--d", default=2, 
                          type=int, help="GP dimension")
      parser.add_argument("--kernel", default="exponential2", 
                          type=str)
@@ -195,11 +175,11 @@ def args_parser():
      parser.add_argument("--noise", default=0.001, 
                          type=float, help="additional noise of GP")
      # VAE
-     parser.add_argument("--n", default=300, 
+     parser.add_argument("--n", default=25, 
                          type=int, help="number of point on grid")
-     parser.add_argument("--hidden-dims", default=[35,30], 
+     parser.add_argument("--hidden-dims", default=[50,30], 
                          type=list, help="dimension of hidden layers for encoder/decoder")
-     parser.add_argument("--z-dim", default=10, 
+     parser.add_argument("--z-dim", default=15, 
                          type=int, help="bottleneck dimension")
      parser.add_argument("--batch-size", default=1000, 
                          type=int, help="size of minibatch")
@@ -229,8 +209,23 @@ def args_parser():
      return args
 
 
-
 if __name__ == "__main__":
 
+     # n = 25 # default in arg parser
+     # d = 2 
+     # grid = jnp.arange(0, 1, 1/n)
+     # rng_key = random.PRNGKey(0)
+
+     # if d==1:
+     #      x = grid
+     #      # print(x.shape)
+     # elif d==2:
+     #      u, v = jnp.meshgrid(grid, grid)
+     #      x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
+     # else:
+     #      raise NotImplementedError
+
+     # example_gp2(rng_key, n, x, noise=0.001)
+
      args = args_parser()
-     main(args, "trig")
+     main(args, "gp2")

@@ -14,27 +14,43 @@ from functools import partial
 
 
 # kernel functions
+# @jit
+# def exp_kernel1(x, z, d, var, ls, noise, jitter=1.0e-6):
+
+#     deltaXsq = jnp.power((x[:, None] - z), 2.0)
+#     k = var * jnp.exp(-0.5 * deltaXsq / ls)
+#     k += (noise + jitter) * jnp.eye(x.shape[0])
+
+#     return k
+
+# check spatial dimension
+def check_d(func):
+     def reshape(x, z, d, *args, **kwargs):
+          # reshape to column vectors
+          if d==1:
+               # reshape to column vector if d==1
+               x = jnp.reshape(x, (x.shape[0], d))
+               z = jnp.reshape(z, (z.shape[0], d))
+          return func(x, z, d, *args, **kwargs)
+     return reshape
+
+# reshape x,z before apply to kernel
+@check_d
 @jit
-def exp_kernel1(x, z, var, ls, noise, jitter=1.0e-6):
-
-    deltaXsq = jnp.power((x[:, None] - z), 2.0)
-    k = var * jnp.exp(-0.5 * deltaXsq / ls)
-    k += (noise + jitter) * jnp.eye(x.shape[0])
-
-    return k
-
-@jit
-def exp_kernel2(x, z, # this is of dimension d
+def exp_kernel2(x, z, 
+               d,
                var, 
                ls, 
                noise, 
-               jitter=1.0e-6
+               jitter=1.0e-6,
                ):
-    deltaX = jnp.linalg.norm(x[:, None] - z, ord=2, axis=2) # sqaured norm on the spatial dim
-    k = var * jnp.exp(-0.5 * jnp.power(deltaX, 2.0) / ls)
-    # if include_noise:
-    k += (noise + jitter) * jnp.eye(x.shape[0])
-    return k
+     # sqaured norm on the spatial dim
+     deltaX = jnp.linalg.norm(x[:, None] - z, ord=2, axis=2) 
+     k = var * jnp.exp(-0.5 * jnp.power(deltaX, 2.0) / ls)
+     # if include_noise:
+     k += (noise + jitter) * jnp.eye(x.shape[0])
+     return k
+
 
 # approximate k^*
 def agg_kernel_grid(rng_key,
@@ -65,7 +81,7 @@ def agg_kernel_grid(rng_key,
     else:
       raise Warning("Function is only implemented for d=1,2")
 
-    _kernel = partial(kernel, var=var, ls=ls, noise=noise, jitter=jitter)
+    _kernel = partial(kernel, d=d, var=var, ls=ls, noise=noise, jitter=jitter)
     __kernel = lambda x, z: jnp.sum(_kernel(x, z))
 
     # the first dim of sample gives the batch dim, i.e. n**d
@@ -80,20 +96,22 @@ def agg_kernel_grid(rng_key,
 class GP:
      def __init__(
           self, 
-          kernel=exp_kernel1, 
+          kernel=exp_kernel2, 
           var=1,
           noise=0,
-          ls=0.001 # this is default
+          ls=0.001, # this is default
+          d=1
           ):
 
           self.kernel = kernel
           self.var = var
           self.noise = noise
           self.ls = ls
+          self.d = d
      
      def sample(self, ls, x, y=None):
           
-          k = self.kernel(x, x, self.var, ls, self.noise)
+          k = self.kernel(x, x, self.d, self.var, ls, self.noise)
 
           # sample Y according to the standard gaussian process formula
           numpyro.sample(

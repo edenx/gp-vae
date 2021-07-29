@@ -43,7 +43,7 @@ def test_GP(
           u, v = jnp.meshgrid(grid, grid)
           x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
 
-     gp = GP(kernel=kernel)
+     gp = GP(kernel=kernel, d=d)
      gp_predictive = Predictive(gp.sample, num_samples=num_samples)
           
      samples = gp_predictive(rng_key=rng_key, x=x)
@@ -72,7 +72,7 @@ def test_VAE(x, args):
      else:
           raise Warning("Othr kernels are not implemented")
 
-     gp = GP(kernel=kernel, var=args.var, noise=args.noise)
+     gp = GP(kernel=kernel, var=args.var, noise=args.noise, d=d)
      vae = VAE(
           gp,
           args.hidden_dims, # list
@@ -98,7 +98,7 @@ def test_Inference(example_func, decoder, decoder_params, x, args):
      # inference on unobserved y with trained decoder
      inference = Inference(
           decoder, decoder_params,
-          args.z_dim,
+          args.z_dim, args.n,
           x, y,
           args.obs_idx,
           args.mcmc_args,
@@ -191,7 +191,8 @@ if __name__ == "__main__":
      elif d==2:
           u, v = jnp.meshgrid(grid, grid)
           x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
-     
+     else:
+          raise NotImplementedError
      args = args_parser()
      # ground_truth, y = example_gp(random.PRNGKey(10), args.n, x, args.obs_idx)
 

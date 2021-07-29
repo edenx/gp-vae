@@ -23,7 +23,8 @@ class Inference:
           self, 
           decoder, 
           decoder_params,
-          z_dim,
+          z_dim, 
+          d, # spatial dim
           x, y,
           obs_idx, # indices for observed location
           mcmc_args, # dictionary
@@ -35,7 +36,8 @@ class Inference:
           self.decoder_params = decoder_params
           self.z_dim = z_dim
           self.x = x
-          self.n = x.shape[0]
+          self.d = d
+          self.n = int(jnp.power(x.shape[0], 1/d))
           self.obs_idx = jnp.asarray(obs_idx)
           self.mcmc_args = mcmc_args
 
@@ -99,16 +101,23 @@ class Inference:
           predictions = predictive(rng_key_pred)["y_pred"]
           # print(predictions)
 
+          if self.d==1:
+               plot_func = self.plot_prediction
+          elif self.d==2:
+               plot_func = self.plot_prediction2
+          else: 
+               raise NotImplementedError
+
           if plot:
                # print(prior_predictions)
                plt.figure(figsize=(12, 6))
 
                plt.subplot(1,2,1)
-               self.plot_prediction(prior_predictions)
+               plot_func(prior_predictions)
                plt.title('Prior')
 
                plt.subplot(1,2,2)
-               self.plot_prediction(predictions)
+               plot_func(predictions)
                plt.title('Posterior')
 
                # plt.savefig('.png', bbox_inches='tight')
@@ -141,5 +150,22 @@ class Inference:
           # plt.show()
           # plt.savefig('.png', bbox_inches='tight')
           # plt.close()
-
- 
+     
+     def plot_prediction2(self, y_):
+          # this is for plotting grid only!
+          mean_pred = jnp.mean(y_, axis=0)
+          # hpdi_pred = hpdi(y_, 0.9)
+          # diff = self.x[0, 1] - self.x[0, 0]
+          plt.scatter(
+               self.x[self.obs_idx, 0]+1/(2*self.n), 
+               self.x[self.obs_idx, 1]+1/(2*self.n), 
+               c=self.y[self.obs_idx])
+          plt.imshow(
+               mean_pred.reshape((self.n, self.n)), 
+               alpha=0.7,
+               cmap='viridis',
+               interpolation='none', 
+               extent=[0,1,0,1], # subject to change, choose e.g. x.min()
+               origin='lower')          
+          plt.colorbar()
+     
