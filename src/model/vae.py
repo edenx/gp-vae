@@ -18,7 +18,7 @@ from numpyro import optim
 from numpyro.infer import SVI, Trace_ELBO, Predictive
 from numpyro.diagnostics import hpdi
 
-class VAE:
+class VAE():
      def __init__(
           self, 
           gp, # GP object
@@ -47,7 +47,7 @@ class VAE:
           self.x = x
           self.rng_key = random.PRNGKey(seed)
           
-          # Predictive function for sampling GP training set
+          # Predictive function for sampling GP training sets
           self.gp_predictive = None
           self.svi = None       
      

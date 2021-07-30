@@ -28,7 +28,7 @@ from model.inference import Inference
 def example_gp2(rng_key, n, x, noise=0.001, plot_y=True):
      # we use the default kwargs in GP apart from noise
      gp_y = GP(kernel=exp_kernel2, noise=noise, d=2)
-     y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=0.01, x=x)["y"][0]
+     y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=0.1, x=x)["y"][0]
 
      ground_truth = None
      # {'x': x, 'y': y}
@@ -172,12 +172,12 @@ def args_parser():
                          type=str)
      parser.add_argument("--var", default=1, 
                          type=int, help="marginal variance of kernel")
-     parser.add_argument("--ls", default=0.001, 
+     parser.add_argument("--ls", default=0.1, 
                          type=float, help="lengthscale of kernel")
      parser.add_argument("--noise", default=0.001, 
                          type=float, help="additional noise of GP")
      # VAE
-     parser.add_argument("--n", default=25, 
+     parser.add_argument("--n", default=100, 
                          type=int, help="number of point on grid")
      parser.add_argument("--hidden-dims", default=[50,30], 
                          type=list, help="dimension of hidden layers for encoder/decoder")

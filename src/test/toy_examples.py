@@ -151,7 +151,7 @@ def main(args, example, dat_noise=0):
           ground_truth
           )
 
-     plt.figure(figsize=(15, 20))
+     plt.figure(figsize=(15, 12.5))
 
      # Inference
      for i, item in enumerate(obs_idx_dict.items()):

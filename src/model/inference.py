@@ -18,48 +18,37 @@ from numpyro.infer import SVI, Trace_ELBO, MCMC, NUTS, init_to_median, Predictiv
 from numpyro.diagnostics import hpdi
 
 # this is separate from VAE training
-class Inference:
+class Inference():
      def __init__(
           self, 
-          decoder, 
-          decoder_params,
-          z_dim, 
           d, # spatial dim
           x, y,
           obs_idx, # indices for observed location
           mcmc_args, # dictionary
           seed=0,
-          ground_truth=None
+          ground_truth=None,
+          grid=True
           ):
 
-          self.decoder = decoder
-          self.decoder_params = decoder_params
-          self.z_dim = z_dim
-          self.x = x
           self.d = d
-          self.n = int(jnp.power(x.shape[0], 1/d))
+          self.x = x
+          self.y = y
+          
           self.obs_idx = jnp.asarray(obs_idx)
           self.mcmc_args = mcmc_args
-
-          self.y = y
           self.rng_key = random.PRNGKey(seed)
           self.ground_truth = ground_truth
+          self.grid = grid
+
+          if grid:
+               self.n = int(jnp.power(x.shape[0], 1/d)) # only for d dim grid
+          else:
+               self.n = x.shape[0]
+          
      
      # @partial(jit, static_argnums=(0,)) # leakage in tracer -- how to fix?
      def regression(self, y=None, obs_idx=None):
-
-          sigma = numpyro.sample("noise", dist.LogNormal(0.0, 1.0))
-          z = numpyro.sample("z", 
-                              dist.Normal(jnp.zeros(self.z_dim), jnp.ones(self.z_dim)))
-
-          f = numpyro.deterministic("f", self.decoder(self.decoder_params, z))
-
-          if y is None: # durinig prediction
-               numpyro.sample("y_pred", dist.Normal(f, sigma))
-          else: # during inference
-               numpyro.sample("y", 
-                              dist.Normal(f[obs_idx], sigma), 
-                              obs=y[obs_idx])
+          raise NotImplementedError
 
      # @partial(jit, static_argnums=(0,))
      def run_mcmc(self, rng_key, y, obs_idx, model):
@@ -103,7 +92,7 @@ class Inference:
 
           if self.d==1:
                plot_func = self.plot_prediction
-          elif self.d==2:
+          elif self.d==2 and self.grid:
                plot_func = self.plot_prediction2
           else: 
                raise NotImplementedError
@@ -127,14 +116,14 @@ class Inference:
           return prior_predictions, predictions
 
      # some plots
-     def plot_prediction(self, y_):
+     def plot_prediction(self, y_pred):
           # ground truth is a dictionaty storing dense grid for x and value of y
-          mean_pred = jnp.mean(y_, axis=0)
-          hpdi_pred = hpdi(y_, 0.9)
+          mean_pred = jnp.mean(y_pred, axis=0)
+          hpdi_pred = hpdi(y_pred, 0.9)
 
           # plt.figure()
           for i in range(20):
-               plt.plot(self.x, y_[i], color="lightgray", alpha=0.1)
+               plt.plot(self.x, y_pred[i], color="lightgray", alpha=0.1)
 
           plt.fill_between(self.x.flatten(), 
                               hpdi_pred[0], hpdi_pred[1], 
@@ -145,15 +134,11 @@ class Inference:
                plt.plot(self.ground_truth["x"], 
                          self.ground_truth["y"], 
                          color="orange", label="ground truth")
-          
           # plt.legend(loc="upper left")
-          # plt.show()
-          # plt.savefig('.png', bbox_inches='tight')
-          # plt.close()
      
-     def plot_prediction2(self, y_):
+     def plot_prediction2(self, y_pred):
           # this is for plotting grid only!
-          mean_pred = jnp.mean(y_, axis=0)
+          mean_pred = jnp.mean(y_pred, axis=0)
           # hpdi_pred = hpdi(y_, 0.9)
           # diff = self.x[0, 1] - self.x[0, 0]
           plt.scatter(
@@ -169,3 +154,120 @@ class Inference:
                origin='lower')          
           plt.colorbar()
      
+
+
+class VAEInfererence(Inference):
+     def __init__(
+          self, 
+          decoder, 
+          decoder_params,
+          z_dim, 
+          *args,
+          **kwargs,
+          ):
+
+          super().__init__(
+               *args,
+               **kwargs,
+               )
+
+          self.decoder = decoder
+          self.decoder_params = decoder_params
+          self.z_dim = z_dim
+
+
+     def regression(self, y=None, obs_idx=None):
+
+          sigma = numpyro.sample("noise", dist.LogNormal(0.0, 1.0))
+          z = numpyro.sample("z", 
+                              dist.Normal(jnp.zeros(self.z_dim), jnp.ones(self.z_dim)))
+
+          f = numpyro.deterministic("f", self.decoder(self.decoder_params, z))
+
+          if y is None: # durinig prediction
+               numpyro.sample("y_pred", dist.Normal(f, sigma))
+          else: # during inference
+               numpyro.sample(
+                    "y", 
+                    dist.Normal(f[obs_idx], sigma), 
+                    obs=y[obs_idx])
+
+
+class GPInference(Inference):
+     def __init__(
+          self, 
+          kernel, 
+          *args,
+          **kwargs,
+          ):
+
+          super().__init__(
+               *args,
+               **kwargs,
+               )
+
+          self.kernel = kernel
+
+     
+     def regression(self, x, y=None, obs_idx=None):
+          # set uninformative log-normal priors on three kernel hyperparameters
+          # what is used in the GP inference numpyro example
+          var = numpyro.sample("kernel_var", dist.LogNormal(0.0, 10.0))
+          noise = numpyro.sample("kernel_noise", dist.LogNormal(0.0, 10.0))
+          ls = numpyro.sample("kernel_length", dist.LogNormal(0.0, 10.0))
+
+          # compute kernel (plus noise, i.e. nugget)
+          k = self.kernel(x, x, var, ls, noise)
+          
+          # prediction without krigging
+          if y is None: # durinig prediction
+               numpyro.sample(
+                    "y_pred", 
+                    dist.MultivariateNormal(
+                         loc=jnp.zeros(x.shape[0]), 
+                         covariance_matrix=k)
+                    )
+          else: # during inference
+               numpyro.sample(
+                    "y", 
+                    dist.MultivariateNormal(
+                         loc=jnp.zeros(obs_idx.shape[0]), 
+                         covariance_matrix=k[jnp.ix_(obs_idx, obs_idx)]),
+                    obs=y[obs_idx])
+
+
+     # def gp_regression(self, x, y=None, obs_idx=None):
+     #      # set uninformative log-normal priors on three kernel hyperparameters
+     #      # what is used in the GP inference numpyro example
+     #      var = numpyro.sample("kernel_var", dist.LogNormal(0.0, 10.0))
+     #      noise = numpyro.sample("kernel_noise", dist.LogNormal(0.0, 10.0))
+     #      ls = numpyro.sample("kernel_length", dist.LogNormal(0.0, 10.0))
+
+     #      # compute kernel
+     #      k = self.kernel(x, x, var, ls, noise)
+
+     #      # sample Y according to the standard gaussian process formula
+     #      numpyro.sample(
+     #           "y_pred",
+     #           dist.MultivariateNormal(
+     #                loc=jnp.zeros(x.shape[0]), 
+     #                covariance_matrix=k),
+     #           obs=y
+     #      )
+
+     # def gp_prediction(self, rng_key, x, y, obs_idx, var, ls, noise):
+     #      # compute kernels between train and test data, etc.
+     #      x_test = x[~obs_idx]
+     #      x_obs = x[obs_idx]
+
+     #      k_pp = self.kernel(x_test, x_test, var, ls, noise)
+     #      k_px = self.kernel(x_test, x_obs, var, ls, noise)
+     #      k_xx = self.kernel(x_obs, x_obs, var, ls, noise)
+     #      k_xx_inv = jnp.linalg.inv(k_xx)
+     #      K = k_pp - jnp.matmul(k_px, jnp.matmul(k_xx_inv, jnp.transpose(k_px)))
+     #      sigma_noise = jnp.sqrt(jnp.clip(jnp.diag(K), a_min=0.0)) * jax.random.normal(
+     #           rng_key, x_test.shape[:1]
+     #      )
+     #      mean = jnp.matmul(k_px, jnp.matmul(k_xx_inv, y[obs_idx]))
+     #      # return mean and samples
+     #      return mean, mean + sigma_noise

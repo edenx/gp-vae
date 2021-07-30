@@ -46,7 +46,7 @@ def exp_kernel2(x, z,
                ):
      # sqaured norm on the spatial dim
      deltaX = jnp.linalg.norm(x[:, None] - z, ord=2, axis=2) 
-     k = var * jnp.exp(-0.5 * jnp.power(deltaX, 2.0) / ls)
+     k = var * jnp.exp(-0.5 * jnp.power(deltaX/ls, 2.0) )
      # if include_noise:
      k += (noise + jitter) * jnp.eye(x.shape[0])
      return k
@@ -93,7 +93,7 @@ def agg_kernel_grid(rng_key,
     return agg__kernel_v2(_x, _x) / (m ** 2)
 
 # may want to rewrite this to include spatial dim 2
-class GP:
+class GP():
      def __init__(
           self, 
           kernel=exp_kernel2, 
@@ -110,7 +110,6 @@ class GP:
           self.d = d
      
      def sample(self, ls, x, y=None):
-          
           k = self.kernel(x, x, self.d, self.var, ls, self.noise)
 
           # sample Y according to the standard gaussian process formula
