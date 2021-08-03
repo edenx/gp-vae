@@ -58,8 +58,8 @@ def example_trig(rng_key, n, x, noise=0, plot_y=True):
      # if plot_y:
      #      plt.figure()
      #      plt.plot(ground_truth["x"], 
-     #                ground_truth["y"], c="orange")
-     #      plt.scatter(x, y, c="lightgray", label="unobserved")
+     #                ground_truth["y"], c="lightgray")
+     #      plt.scatter(x, y, c="orange", label="unobserved")
      #      # plt.scatter(x, y_filtered, color="orange", label="observed")
      #      plt.legend(loc="upper left")  
      #      plt.show()
@@ -178,7 +178,7 @@ def vae_mcmc(args, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/vae_mcmc_1_{}.png'.format(example))
+     # plt.savefig('src/test/plots/vae_mcmc_{}.png'.format(example))
      plt.show()
      plt.close()
 
@@ -259,7 +259,7 @@ def gp_mcmc(args, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     # plt.savefig('src/test/plots/gp_mcmc_1_{}.png'.format(example))
+     # plt.savefig('src/test/plots/gp_mcmc_{}.png'.format(example))
      plt.show()
      plt.close()
 
@@ -337,7 +337,7 @@ def gp_krig(args, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/gp_krig_1_{}.png'.format(example))
+     plt.savefig('src/test/plots/gp_krig_{}.png'.format(example))
      plt.show()
      plt.close()
 
@@ -395,7 +395,9 @@ def args_parser():
 if __name__ == "__main__":
 
      args = args_parser()
-     vae_mcmc(args, "trig", 0.001) 
+     # gp with dat_noise=0.001
+     # krig with dat_noise=0.1
+     vae_mcmc(args, "trig", dat_noise=0.1) 
      # VAE not performing well on small lengthscale
      # why?
      # as we are using fixed noise in the training?

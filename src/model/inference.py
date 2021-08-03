@@ -186,7 +186,7 @@ class VAEInference(Inference):
 
      def regression(self, y=None, obs_idx=None):
 
-          noise = numpyro.sample("kernel_noise", dist.Beta(0.2, 2.0))
+          noise = numpyro.sample("kernel_noise", dist.Beta(0.6, 2.0))
           z = numpyro.sample("z", 
                               dist.Normal(jnp.zeros(self.z_dim), jnp.ones(self.z_dim)))
 
