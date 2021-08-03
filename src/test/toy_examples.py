@@ -114,7 +114,14 @@ def vae_mcmc(args, example, dat_noise=0):
      x = jnp.arange(0, 1, 1/args.n)
 
      # VAE training
-     gp = GP(kernel=kernel, var=args.var, noise=args.noise, d=args.d) # ls is random in training
+     # ls is random in training
+     gp = GP(
+          kernel=kernel, 
+          var=args.var, 
+          noise=args.noise, 
+          jitter=args.jitter, 
+          d=args.d)
+           
      vae = VAE(
           gp,
           args.hidden_dims, # list
@@ -129,7 +136,7 @@ def vae_mcmc(args, example, dat_noise=0):
           args.seed)
      decoder, decoder_params = vae.fit()
 
-     # context points are 1, 10, 100, 200
+     # context points are 1, 10, 40, 100
      obs_idx_dict = {}
      obs_idx_dict['1'] = [100]
      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
@@ -178,7 +185,7 @@ def vae_mcmc(args, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     # plt.savefig('src/test/plots/vae_mcmc_{}.png'.format(example))
+     plt.savefig('src/test/plots/vae_mcmc_{}.png'.format(example))
      plt.show()
      plt.close()
 
@@ -354,8 +361,10 @@ def args_parser():
                          type=int, help="marginal variance of kernel")
      parser.add_argument("--ls", default=0.01, 
                          type=float, help="lengthscale of kernel")
-     parser.add_argument("--noise", default=0.002, 
-                         type=float, help="noise of training sample")
+     parser.add_argument("--noise", default=0.0, 
+                         type=float, help="random noise of training sample")
+     parser.add_argument("--jitter", default=1.0e-5, 
+                         type=float, help="fixed additional noise to kernel diagonal for numerical stability")
      # VAE
      parser.add_argument("--n", default=300, 
                          type=int, help="number of point on grid")
@@ -394,12 +403,13 @@ def args_parser():
 
 if __name__ == "__main__":
 
+     # use jitter=1.0e-5 for numerical stability
+     # use noise=0.0 for training samples from GP
      args = args_parser()
      # gp with dat_noise=0.001
      # krig with dat_noise=0.1
-     vae_mcmc(args, "trig", dat_noise=0.1) 
+     vae_mcmc(args, "gp", dat_noise=0.001) 
      # VAE not performing well on small lengthscale
      # why?
-     # as we are using fixed noise in the training?
 
      # gp_krig(args, "gp", 0.001)

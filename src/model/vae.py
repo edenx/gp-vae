@@ -43,7 +43,7 @@ class VAE():
           self.learning_rate = learning_rate
           self.num_epochs = num_epochs
           self.num_train = num_train
-          self.num_test = num_train
+          self.num_test = num_test
           self.x = x
           self.rng_key = random.PRNGKey(seed)
           
@@ -125,7 +125,7 @@ class VAE():
                rng_key_i = random.fold_in(rng_key, i) 
                rng_key_i, rng_key_ls = random.split(rng_key_i)
                
-               length_i = numpyro.sample("length", dist.Beta(0.8, 1.5), rng_key=rng_key_ls)
+               length_i = numpyro.sample("length", dist.Beta(0.8, 2.0), rng_key=rng_key_ls)
                batch = self.gp_predictive(rng_key_i, length_i, self.x)
 
                loss = self.svi.evaluate(svi_state, batch['y']) / self.batch_size

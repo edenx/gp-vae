@@ -48,7 +48,7 @@ def exp_kernel2(x, z,
      # sqaured norm on the spatial dim
      deltaX = jnp.linalg.norm(x[:, None] - z, ord=2, axis=2) 
      k = var * jnp.exp(-0.5 * jnp.power(deltaX/ls, 2.0) )
-
+     # if include_noise:
      if include_noise:
           k += (noise + jitter) * jnp.eye(x.shape[0])
      return k
@@ -101,7 +101,8 @@ class GP():
           kernel=exp_kernel2, 
           var=1,
           noise=0,
-          ls=0.001, # this is default
+          ls=0.01, # this is default
+          jitter=1.0e-6,
           d=1
           ):
 
@@ -109,10 +110,11 @@ class GP():
           self.var = var
           self.noise = noise
           self.ls = ls
+          self.jitter = jitter
           self.d = d
      
      def sample(self, ls, x, y=None):
-          k = self.kernel(x, x, self.d, self.var, ls, self.noise)
+          k = self.kernel(x, x, self.d, self.var, ls, self.noise, self.jitter)
 
           # sample Y according to the standard gaussian process formula
           numpyro.sample(
