@@ -22,7 +22,7 @@ import numpyro.distributions as dist
 # Modules
 from model.gp import GP, exp_kernel2, agg_kernel_grid
 from model.vae import VAE
-from model.inference import Inference
+from model.inference import VAEInference, GPInference
 
 # draws from GP
 def example_gp2(rng_key, n, x, noise=0.001, plot_y=True):
@@ -109,7 +109,7 @@ def main(args, example, dat_noise=0.001):
      # generate data for inference
      ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise, plot_y=False)
      # initialise the Inference object
-     inference = Inference(
+     inference = VAEInference(
           decoder, decoder_params,
           args.z_dim, args.d, # n locs on each axis
           x, y, # None for generated data, y_filtered
@@ -159,7 +159,8 @@ def main(args, example, dat_noise=0.001):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/test_example_{}.png'.format(example))
+     # plt.savefig('src/test/plots/test_example_{}.png'.format(example))
+     plt.show()
      plt.close()
 
 
@@ -174,7 +175,7 @@ def args_parser():
                          type=int, help="marginal variance of kernel")
      parser.add_argument("--ls", default=0.1, 
                          type=float, help="lengthscale of kernel")
-     parser.add_argument("--noise", default=0.001, 
+     parser.add_argument("--noise", default=0.0, 
                          type=float, help="additional noise of GP")
      # VAE
      parser.add_argument("--n", default=100, 
@@ -213,21 +214,21 @@ def args_parser():
 
 if __name__ == "__main__":
 
-     n = 25 # default in arg parser
-     d = 2 
-     grid = jnp.arange(0, 1, 1/n)
-     rng_key = random.PRNGKey(0)
+     # n = 25 # default in arg parser
+     # d = 2 
+     # grid = jnp.arange(0, 1, 1/n)
+     # rng_key = random.PRNGKey(0)
 
-     if d==1:
-          x = grid
-          # print(x.shape)
-     elif d==2:
-          u, v = jnp.meshgrid(grid, grid)
-          x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
-     else:
-          raise NotImplementedError
+     # if d==1:
+     #      x = grid
+     #      # print(x.shape)
+     # elif d==2:
+     #      u, v = jnp.meshgrid(grid, grid)
+     #      x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
+     # else:
+     #      raise NotImplementedError
 
-     example_gp2(rng_key, n, x)
+     # example_gp2(rng_key, n, x)
 
-     # args = args_parser()
-     # main(args, "gp2")
+     args = args_parser()
+     main(args, "gp2")

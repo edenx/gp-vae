@@ -36,19 +36,21 @@ def check_d(func):
 
 # reshape x,z before apply to kernel
 @check_d
-@jit
+# @jit
 def exp_kernel2(x, z, 
                d,
                var, 
                ls, 
                noise, 
                jitter=1.0e-6,
+               include_noise=True
                ):
      # sqaured norm on the spatial dim
      deltaX = jnp.linalg.norm(x[:, None] - z, ord=2, axis=2) 
      k = var * jnp.exp(-0.5 * jnp.power(deltaX/ls, 2.0) )
-     # if include_noise:
-     k += (noise + jitter) * jnp.eye(x.shape[0])
+
+     if include_noise:
+          k += (noise + jitter) * jnp.eye(x.shape[0])
      return k
 
 

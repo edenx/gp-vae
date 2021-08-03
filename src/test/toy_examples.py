@@ -22,7 +22,7 @@ import numpyro.distributions as dist
 # Modules
 from model.gp import GP, exp_kernel2, agg_kernel_grid
 from model.vae import VAE
-from model.inference import Inference
+from model.inference import Inference, VAEInference, GPInference
 
 
 # y = x^3 + noise
@@ -70,8 +70,8 @@ def example_trig(rng_key, n, x, noise=0, plot_y=True):
 # draws from GP
 def example_gp(rng_key, n, x, noise=0, plot_y=True):
      # we use the default kwargs in GP apart from noise
-     gp_y = GP(kernel=exp_kernel1, noise=noise)
-     y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=gp_y.ls, x=x)["y"][0]
+     gp_y = GP(kernel=exp_kernel2, noise=noise)
+     y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=0.04, x=x)["y"][0]
 
      # smoothing for plotting with spline
      # 40 represents number of points to make between x.min and x.max
@@ -89,7 +89,8 @@ def main(args, example, dat_noise=0):
      dense grid over [0,1].
      args: namespace, args of GP, VAE and Inference
      example: string, example function used to generate data
-     dat_noise: float, added noise to generated data"""
+     dat_noise: float, added noise to generated data
+     """
 
      assert args.d is 1
 
@@ -132,8 +133,8 @@ def main(args, example, dat_noise=0):
      obs_idx_dict = {}
      obs_idx_dict['1'] = [100]
      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
-     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
-     obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+     obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=50))
+     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
 
      rng_key = random.PRNGKey(args.seed+1)
 
@@ -141,7 +142,7 @@ def main(args, example, dat_noise=0):
      ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
 
      # initialise the Inference object
-     inference = Inference(
+     inference = VAEInference(
           decoder, decoder_params,
           args.z_dim, args.d,
           x, None, # None for generated data, y_filtered
@@ -178,7 +179,168 @@ def main(args, example, dat_noise=0):
      
      plt.tight_layout()
      plt.savefig('src/test/plots/test_example_{}.png'.format(example))
+     plt.show()
      plt.close()
+
+
+def benchmark(args, example, dat_noise=0):
+
+     assert args.d is 1
+
+     if args.kernel == "exponential2":
+          kernel = exp_kernel2
+     # elif args.kernel == "exponential1":
+     #      kernel = exp_kernel1
+     else:
+          raise NotImplementedError
+     
+     if example == "cubic":
+          example_func = example_cubic
+     elif example == "trig":
+          example_func = example_trig
+     elif example == "gp":
+          example_func = example_gp
+     else:
+          raise NotImplementedError
+
+     # n points over [0,1]
+     x = jnp.arange(0, 1, 1/args.n)
+
+     # context points are 1, 10, 100, 200
+     obs_idx_dict = {}
+     # obs_idx_dict['1'] = [100]
+     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+     # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+     # obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+
+     rng_key = random.PRNGKey(args.seed+1)
+
+     # generate data for inference
+     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
+
+     
+     inference = GPInference(
+          kernel,
+          args.d,
+          x, None, # None for generated data, y_filtered
+          args.obs_idx,
+          args.mcmc_args,
+          args.seed,
+          ground_truth
+          )
+
+     plt.figure(figsize=(15, 12.5))
+
+     # Inference
+     for i, item in enumerate(obs_idx_dict.items()):
+          print(i)
+          k, obs_idx = item
+          obs_idx = jnp.asarray(obs_idx)
+
+          # mask unobserved y
+          mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
+          unobs_idx = jnp.arange(args.n)[~mask]
+          y_filtered = ops.index_update(y, unobs_idx, np.NaN)
+
+          # update observation locations
+          inference.obs_idx = obs_idx
+          inference.y = y_filtered
+
+          # obtain predictions
+          prior_pred, pred = inference.fit(plot=False)
+
+          ## posterior
+          plt.subplot(2,1,i+1)
+          inference.plot_prediction(prior_pred)
+          plt.title('Posterior-'+k)
+
+          plt.subplot(2,1,i+2)
+          inference.plot_prediction(pred)
+          plt.title('Posterior-'+k)
+     
+     plt.tight_layout()
+     # plt.savefig('src/test/plots/test_example_{}.png'.format(example))
+     plt.show()
+     plt.close()
+
+
+def benchmark2(args, example, dat_noise=0):
+     assert args.d is 1
+
+     if args.kernel == "exponential2":
+          kernel = exp_kernel2
+     # elif args.kernel == "exponential1":
+     #      kernel = exp_kernel1
+     else:
+          raise NotImplementedError
+     
+     if example == "cubic":
+          example_func = example_cubic
+     elif example == "trig":
+          example_func = example_trig
+     elif example == "gp":
+          example_func = example_gp
+     else:
+          raise NotImplementedError
+
+     # n points over [0,1]
+     x = jnp.arange(0, 1, 1/args.n)
+
+     # context points are 1, 10, 100, 200
+     obs_idx_dict = {}
+     obs_idx_dict['1'] = [200]
+     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+     obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=50))
+     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+
+     rng_key = random.PRNGKey(args.seed+1)
+
+     # generate data for inference
+     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
+
+     # do inference
+     inference = GPInference(
+          kernel,
+          args.d,
+          x, None, # None for generated data, y_filtered
+          args.obs_idx,
+          args.mcmc_args,
+          args.seed,
+          ground_truth
+          )
+     
+     plt.figure(figsize=(15, 12.5))
+
+     # Inference
+     for i, item in enumerate(obs_idx_dict.items()):
+          print(i)
+          k, obs_idx = item
+          obs_idx = jnp.asarray(obs_idx)
+
+          # mask unobserved y
+          mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
+          unobs_idx = jnp.arange(args.n)[~mask]
+          y_filtered = ops.index_update(y, unobs_idx, np.NaN)
+
+          # update observation locations
+          inference.obs_idx = obs_idx
+          inference.y = y_filtered
+
+          # obtain predictions
+          _, pred = inference.gp_fit(plot=False)
+          ## posterior
+          # plt.subplot(2,1,i+1)
+          # inference.plot_prediction(prior_pred)
+          # plt.title('Posterior-'+k)
+          plt.subplot(2,2,i+1)
+          inference.plot_prediction(pred, x=jnp.delete(x, obs_idx))
+          plt.title('Posterior-'+k)
+     
+     plt.tight_layout()
+     plt.savefig('src/test/plots/gp_example_{}.png'.format(example))
+     plt.show()
+     plt.close()
+
 
 
 def args_parser():
@@ -190,10 +352,10 @@ def args_parser():
                          type=str)
      parser.add_argument("--var", default=1, 
                          type=int, help="marginal variance of kernel")
-     parser.add_argument("--ls", default=0.001, 
+     parser.add_argument("--ls", default=0.01, 
                          type=float, help="lengthscale of kernel")
-     parser.add_argument("--noise", default=0.001, 
-                         type=float, help="additional noise of GP")
+     parser.add_argument("--noise", default=0.002, 
+                         type=float, help="noise of training sample")
      # VAE
      parser.add_argument("--n", default=300, 
                          type=int, help="number of point on grid")
@@ -233,4 +395,9 @@ def args_parser():
 if __name__ == "__main__":
 
      args = args_parser()
-     main(args, "trig")
+     main(args, "trig", 0.001) 
+     # VAE not performing well on small lengthscale
+     # why?
+     # as we are using fixed noise in the training?
+
+     # benchmark2(args, "gp", 0.001)

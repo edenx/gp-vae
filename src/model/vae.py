@@ -108,7 +108,7 @@ class VAE():
 
                loss_sum, svi_state = val # val -- svi_state
                # directly draw sample from the GP for a random lengthscale
-               length_i = numpyro.sample("length", dist.Beta(0.2, 1.0), rng_key=rng_key_ls)
+               length_i = numpyro.sample("length", dist.Beta(0.8, 2.0), rng_key=rng_key_ls)
                batch = self.gp_predictive(rng_key_i, length_i, self.x)
 
                # `update` returns (svi_state, loss)
@@ -125,7 +125,7 @@ class VAE():
                rng_key_i = random.fold_in(rng_key, i) 
                rng_key_i, rng_key_ls = random.split(rng_key_i)
                
-               length_i = numpyro.sample("length", dist.Beta(0.2, 1.0), rng_key=rng_key_ls)
+               length_i = numpyro.sample("length", dist.Beta(0.8, 1.5), rng_key=rng_key_ls)
                batch = self.gp_predictive(rng_key_i, length_i, self.x)
 
                loss = self.svi.evaluate(svi_state, batch['y']) / self.batch_size
