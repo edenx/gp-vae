@@ -159,7 +159,7 @@ def main(args, example, dat_noise=0.001):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     # plt.savefig('src/test/plots/test_example_{}.png'.format(example))
+     # plt.savefig('src/test/plots/vae_mcmc_{}.png'.format(example))
      plt.show()
      plt.close()
 

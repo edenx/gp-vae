@@ -83,7 +83,7 @@ def example_gp(rng_key, n, x, noise=0, plot_y=True):
 
      return ground_truth, y
      
-def main(args, example, dat_noise=0):
+def vae_mcmc(args, example, dat_noise=0):
      """ Plot posterior predictions for varying size of unserved locations
      with index ranging from 1, 10, 100, 200 for a total of 300 (default) 
      dense grid over [0,1].
@@ -178,12 +178,12 @@ def main(args, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/test_example_{}.png'.format(example))
+     plt.savefig('src/test/plots/vae_mcmc_1_{}.png'.format(example))
      plt.show()
      plt.close()
 
 
-def benchmark(args, example, dat_noise=0):
+def gp_mcmc(args, example, dat_noise=0):
 
      assert args.d is 1
 
@@ -259,12 +259,12 @@ def benchmark(args, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     # plt.savefig('src/test/plots/test_example_{}.png'.format(example))
+     # plt.savefig('src/test/plots/gp_mcmc_1_{}.png'.format(example))
      plt.show()
      plt.close()
 
 
-def benchmark2(args, example, dat_noise=0):
+def gp_krig(args, example, dat_noise=0):
      assert args.d is 1
 
      if args.kernel == "exponential2":
@@ -337,7 +337,7 @@ def benchmark2(args, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/gp_example_{}.png'.format(example))
+     plt.savefig('src/test/plots/gp_krig_1_{}.png'.format(example))
      plt.show()
      plt.close()
 
@@ -395,9 +395,9 @@ def args_parser():
 if __name__ == "__main__":
 
      args = args_parser()
-     main(args, "trig", 0.001) 
+     vae_mcmc(args, "trig", 0.001) 
      # VAE not performing well on small lengthscale
      # why?
      # as we are using fixed noise in the training?
 
-     # benchmark2(args, "gp", 0.001)
+     # gp_krig(args, "gp", 0.001)
