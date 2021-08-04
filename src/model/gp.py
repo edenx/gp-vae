@@ -1,6 +1,6 @@
 # JAX
 import jax.numpy as jnp
-from jax import random, lax, jit, ops
+from jax import random, jit, ops, vmap
 from jax.experimental import stax
 
 # Numpyro
@@ -25,6 +25,8 @@ from functools import partial
 
 # check spatial dimension
 def check_d(func):
+     """Check spatial dimension of input, transform 1d array to column vector.
+     """
      def reshape(x, z, d, *args, **kwargs):
           # reshape to column vectors
           if d==1:
@@ -45,6 +47,21 @@ def exp_kernel2(x, z,
                jitter=1.0e-6,
                include_noise=True
                ):
+     """Exponential kernel for 1D and 2D spatial-temporal data.
+
+     Args: 
+          x, z (ndarray) - spatial-temporal data.
+          d (int) - spatial dimension 1 or 2.
+          var (float) - marginal variance.
+          ls (float) - lengthscale of the kernel.
+          noise (float) - additional noise to diagonal entries.
+          jiitte (float) - tiny noise added to diagonal for numerical stability.
+          include_noise (bool) - if True include jitter and noise (square Gram matrix).
+
+     Returns:
+          kernel grram matrix.
+     """
+     assert d==1 or d==2
      # sqaured norm on the spatial dim
      deltaX = jnp.linalg.norm(x[:, None] - z, ord=2, axis=2) 
      k = var * jnp.exp(-0.5 * jnp.power(deltaX/ls, 2.0) )
@@ -96,6 +113,16 @@ def agg_kernel_grid(rng_key,
 
 # may want to rewrite this to include spatial dim 2
 class GP():
+     """Class for GP.
+
+     Attributes:
+          kernel - kernel function.
+          var (float) - marginal variance of kernel.
+          noise (float) - added noise of kernel.
+          ls (float) - lengthscale of kernel.
+          jitter (float) - small positive noise on diagonal entries.
+          d (int) - spatial dimension 1 or 2.
+     """
      def __init__(
           self, 
           kernel=exp_kernel2, 
@@ -114,6 +141,16 @@ class GP():
           self.d = d
      
      def sample(self, ls, x, y=None):
+          """Sample from GP with a given lengthscale.
+
+          Args:
+               ls (float) - lengthscale of kernel.
+               x (ndaray) - spatial location.
+               y (ndarray) - (function) value at x.
+          
+          Returns:
+               sampler for y.
+          """
           k = self.kernel(x, x, self.d, self.var, ls, self.noise, self.jitter)
 
           # sample Y according to the standard gaussian process formula

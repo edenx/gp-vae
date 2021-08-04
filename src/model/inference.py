@@ -19,6 +19,18 @@ from numpyro.diagnostics import hpdi
 
 # this is separate from VAE training
 class Inference():
+     """Class for inference methods.
+
+     Attributes:
+          d (int)             - spatial dimension.
+          x (ndarray)         - spatial locations.
+          y (ndarray)         - (function) value at x.
+          obs_idx (list)      - index for observation location.
+          mcmc_args (dict)    - dictionary containing parameters for MCMC.
+          seed (int)          - random seed.
+          ground_truth (dict) - ground truth {'x': x, 'y': y} (for highr resolution x and y)
+          grid (bool)         - if True the data is supported on regular grid.
+     """
      def __init__(
           self, 
           d, # spatial dim
@@ -48,10 +60,23 @@ class Inference():
      
      # @partial(jit, static_argnums=(0,)) # leakage in tracer -- how to fix?
      def regression(self, y=None, obs_idx=None):
+          """Model regression y=f(x)+noise.
+          """
           raise NotImplementedError
 
      # @partial(jit, static_argnums=(0,))
      def run_mcmc(self, rng_key, y, obs_idx, model):
+          """Run MCMC for given model and observations.
+
+          Args:
+               rng_key (ndarray) - a PRNGKey used as the random key.
+               y (ndarray) - observations.
+               obs_idx (ndarray) - location of observations.
+               model - model for the inference.
+          
+          Returns:
+               samples from posterior distribution.
+          """
           numpyro.enable_validation(is_validate=True)
           start = time.time()
           # we may choose other ones, but for now -- `init_to_medians`
@@ -73,6 +98,14 @@ class Inference():
           return mcmc.get_samples()
 
      def fit(self, plot=True):
+          """Function to do MCMC on regression.
+
+          Args:
+               plot (bool) - if True plot the posterior prediction.
+          
+          Returns:
+               prior and posterior predictions.
+          """
           rng_key, rng_key_prior, rng_key_post, rng_key_pred = random.split(self.rng_key, 4)
 
           # we may want to check how the prediction does with prior
@@ -85,10 +118,7 @@ class Inference():
                self.y, 
                self.obs_idx, 
                model=self.regression)
-          # print(np.unique(np.isnan(post_samples['kernel_noise']), return_counts=True))
-          # print(np.unique(np.isnan(post_samples['kernel_var']), return_counts=True))
-          # print(np.unique(np.isnan(post_samples['kernel_length']), return_counts=True))
-          # print(np.unique(np.isnan(post_samples['y_pred']), return_counts=True))
+
           # get samples from predictive distribution
           predictive = Predictive(self.regression, post_samples)
           predictions = predictive(rng_key_pred)["y_pred"]
@@ -121,6 +151,12 @@ class Inference():
 
      # some plots
      def plot_prediction(self, y_pred, x=None):
+          """plot 1D posterior prediction.
+
+          Args:  
+               y_pred (ndarray) - prediction.
+               x (ndarray) - spatial locations for y.
+          """
           if x is None:
                x = self.x
           # ground truth is a dictionaty storing dense grid for x and value of y
@@ -144,14 +180,23 @@ class Inference():
                          color="orange", label="ground truth")
           # plt.legend(loc="upper left")
      
-     def plot_prediction2(self, y_pred):
+     def plot_prediction2(self, y_pred, x=None):
+          """plot 1D posterior prediction.
+
+          Args:  
+               y_pred (ndarray) - prediction.
+               x (ndarray) - spatial locations for y.
+          """
+
+          if x is None:
+               x = self.x
           # this is for plotting grid only!
           mean_pred = jnp.mean(y_pred, axis=0)
           # hpdi_pred = hpdi(y_, 0.9)
           # diff = self.x[0, 1] - self.x[0, 0]
           plt.scatter(
-               self.x[self.obs_idx, 0]+1/(2*self.n), 
-               self.x[self.obs_idx, 1]+1/(2*self.n), 
+               x[self.obs_idx, 0]+1/(2*self.n), 
+               x[self.obs_idx, 1]+1/(2*self.n), 
                c=self.y[self.obs_idx])
           plt.imshow(
                mean_pred.reshape((self.n, self.n)), 
@@ -165,6 +210,13 @@ class Inference():
 
 
 class VAEInference(Inference):
+     """Class for MCMC inference with VAE trained prior.
+
+     Attributes:
+          decoder - decoder from VAE class.
+          decoder_params - optimised parameters of decoder network.
+          z_dim (int) - dimension of latent representation.
+     """
      def __init__(
           self, 
           decoder, 
@@ -185,6 +237,12 @@ class VAEInference(Inference):
 
 
      def regression(self, y=None, obs_idx=None):
+          """Regression function for MCMC.
+
+          Args:
+               y (ndarray) - function values (np.nan at unobserved locations).
+               obs_idx (nd_array) - index of observation locations.
+          """
 
           noise = numpyro.sample("kernel_noise", dist.Beta(0.6, 2.0))
           z = numpyro.sample("z", 
@@ -202,6 +260,11 @@ class VAEInference(Inference):
 
 
 class GPInference(Inference):
+     """Class for inference with GP prior.
+
+     Attributes:
+          kernel - kernel function.
+     """
      def __init__(
           self, 
           kernel, 
@@ -218,6 +281,12 @@ class GPInference(Inference):
 
      
      def regression(self, y=None, obs_idx=None):
+          """Regression function for MCMC.
+
+          Args:
+               y (ndarray) - function values (np.nan at unobserved locations).
+               obs_idx (nd_array) - index of observation locations.
+          """
           # set uninformative log-normal priors on three kernel hyperparameters
           # what is used in the GP inference numpyro example
           var = numpyro.sample("kernel_var", dist.Beta(0.8, 1.5))
@@ -253,6 +322,12 @@ class GPInference(Inference):
 
 
      def gp_regression(self, x, y=None):
+          """Kriging/exact GP regression.
+
+          Args:
+               x (ndarray) - observed spatial locations.
+               y (ndarray) - observed values (not contain np.nan).
+          """
           var = numpyro.sample("kernel_var", dist.Beta(0.8, 1.5))
           noise = numpyro.sample("kernel_noise", dist.Beta(0.6, 2.0))
           # var = 1
@@ -273,6 +348,19 @@ class GPInference(Inference):
 
      
      def gp_prediction(self, rng_key, x, y, var, ls, noise):
+          """Prediction using kriging.
+          
+          Args:
+               rng_key (ndarray) - a PRNGKey used as the random key.
+               x (ndarray) - (full) spatial locations.
+               y (ndarray) - function values at x (np.nan at unobservred locations).
+               var (float) - marginal variance of kernel for GP prior.
+               ls (flaot) - lengthscale.
+               noise (flaot) - noise on the diagonal.
+
+          Returns:
+               posterior mean and posteerior samples.
+          """
           # compute kernels between train and test data, etc.
           x_test = jnp.delete(x, self.obs_idx)
           x_obs = x[self.obs_idx]
@@ -293,6 +381,17 @@ class GPInference(Inference):
      
 
      def gp_run_mcmc(self, rng_key, x, y, model):
+          """Draw samples from posterior with observed y.
+          
+          Args:
+               rng_key (ndarray) - a PRNGKey used as the random key.
+               x (ndarray) - observed spatial locations.
+               y (ndarray) - observed values (not contain np.nan).
+               model - model to be inffered.
+          
+          Returns:
+               posteroir samples.
+          """
           start = time.time()
           # demonstrate how to use different HMC initialization strategies
           init_strategy = init_to_median(num_samples=10)
@@ -312,6 +411,11 @@ class GPInference(Inference):
      
 
      def gp_fit(self, plot=True):
+          """Get predictions with krigging.
+
+          Returns:
+               posterior prediciton at unobserved locations.
+          """
           rng_key, rng_key_prior, rng_key_post, rng_key_pred = random.split(self.rng_key, 4)
 
           # we may want to check how the prediction does with prior
