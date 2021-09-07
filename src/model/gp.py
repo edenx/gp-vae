@@ -60,7 +60,7 @@ def exp_kernel2(x, z,
           include_noise (bool) - if True include jitter and noise (square Gram matrix).
 
      Returns:
-          kernel grram matrix.
+          kernel gram matrix.
      """
      assert len(x.shape)==len(z.shape)
      assert len(x.shape)==1 or len(x.shape)==2

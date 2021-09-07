@@ -431,7 +431,7 @@ class GPInference(Inference):
                random.split(rng_key_pred, post_samples["kernel_var"].shape[0]),
                post_samples["kernel_var"],
                post_samples["kernel_length"],
-               post_samples["kernel_sigma"],
+               post_samples["kernel_sigma"]
           )
           means, predictions = vmap(
                lambda rng_key, var, length, noise: self.gp_prediction(
