@@ -11,6 +11,7 @@ from numpyro.infer import SVI, Trace_ELBO, Predictive
 from numpyro.diagnostics import hpdi
 
 from functools import partial
+import numpy as np
 
 
 # kernel functions
@@ -27,25 +28,25 @@ from functools import partial
 def check_d(func):
      """Check spatial dimension of input, transform 1d array to column vector.
      """
-     def reshape(x, z, d, *args, **kwargs):
+     def reshape(x, z, *args, **kwargs):
+          assert len(x.shape)==len(z.shape)
           # reshape to column vectors
-          if d==1:
+          if len(x.shape)==1:
                # reshape to column vector if d==1
-               x = jnp.reshape(x, (x.shape[0], d))
-               z = jnp.reshape(z, (z.shape[0], d))
-          return func(x, z, d, *args, **kwargs)
+               x = jnp.reshape(x, (x.shape[0], 1))
+               z = jnp.reshape(z, (z.shape[0], 1))
+          return func(x, z, *args, **kwargs)
      return reshape
 
 # reshape x,z before apply to kernel
 @check_d
 # @jit
 def exp_kernel2(x, z, 
-               d,
+               # d,
                var, 
                ls, 
-               noise, 
-               jitter=1.0e-6,
-               include_noise=True
+               # noise, 
+               jitter=1.0e-5
                ):
      """Exponential kernel for 1D and 2D spatial-temporal data.
 
@@ -61,13 +62,20 @@ def exp_kernel2(x, z,
      Returns:
           kernel grram matrix.
      """
-     assert d==1 or d==2
+     assert len(x.shape)==len(z.shape)
+     assert len(x.shape)==1 or len(x.shape)==2
+
+     # print("exp kernel", x.shape)
+     # print(z.shape)
+
      # sqaured norm on the spatial dim
      deltaX = jnp.linalg.norm(x[:, None] - z, ord=2, axis=2) 
      k = var * jnp.exp(-0.5 * jnp.power(deltaX/ls, 2.0) )
-     # if include_noise:
-     if include_noise:
-          k += (noise + jitter) * jnp.eye(x.shape[0])
+
+     # ckeck if kernel matrix is a square matrix -- 
+     # stablise inversion with jitter on the diagonal
+     if k.shape[0] == k.shape[1]:
+          k += jitter * jnp.eye(x.shape[0])
      return k
 
 
@@ -79,7 +87,7 @@ def agg_kernel_grid(rng_key,
                     kernel, 
                     var, 
                     ls, 
-                    noise,
+                    # noise,
                     jitter=1.0e-6,
                     ):
 
@@ -100,7 +108,7 @@ def agg_kernel_grid(rng_key,
     else:
       raise Warning("Function is only implemented for d=1,2")
 
-    _kernel = partial(kernel, d=d, var=var, ls=ls, noise=noise, jitter=jitter)
+    _kernel = partial(kernel, var=var, ls=ls, jitter=jitter)
     __kernel = lambda x, z: jnp.sum(_kernel(x, z))
 
     # the first dim of sample gives the batch dim, i.e. n**d
@@ -126,22 +134,23 @@ class GP():
      def __init__(
           self, 
           kernel=exp_kernel2, 
-          var=1,
-          noise=0,
-          ls=0.01, # this is default
-          jitter=1.0e-6,
+          # var=1,
+          # noise=0,
+          # ls=0.01, # this is default
+          jitter=1.0e-5,
           d=1
           ):
 
           self.kernel = kernel
-          self.var = var
-          self.noise = noise
-          self.ls = ls
+          # self.var = var
+          # self.noise = noise
+          # self.ls = ls
           self.jitter = jitter
           self.d = d
      
-     def sample(self, ls, x, y=None):
-          """Sample from GP with a given lengthscale.
+     # update the function with user defined variance
+     def sample(self, x, y=None, ls=None, var=None, sigma=None):
+          """Sample from GP with a given lengthscale and marginal vaiance.
 
           Args:
                ls (float) - lengthscale of kernel.
@@ -151,11 +160,27 @@ class GP():
           Returns:
                sampler for y.
           """
-          k = self.kernel(x, x, self.d, self.var, ls, self.noise, self.jitter)
+
+          if ls is None:
+               ls = numpyro.sample("length", dist.InverseGamma(4,1))
+          if var is None:
+               var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
+          if sigma is None:
+               sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
+
+          k = self.kernel(x, x, var, ls, self.jitter)
+
+          ## Sanity check: if length/dx ->1: OK,  if length/dx -> Inf: covariance becomes degenerate
+          # logdetK = np.linalg.slogdet(np.asarray(k))[0] * np.linalg.slogdet(np.asarray(k))[1]
+          # dx = 1/k.shape[0]
+          # print(k[0:5, 0:5])
+          # print("dx =" + str(dx))
+          # print("log(det(K)) = " + str(logdetK))
+          # print("length / dx = " + str(ls/dx))
 
           # sample Y according to the standard gaussian process formula
-          numpyro.sample(
-               "y",
-               dist.MultivariateNormal(loc=jnp.zeros(x.shape[0]), covariance_matrix=k), 
-               obs=y
-          )
+          f = numpyro.sample(
+               "f",
+               dist.MultivariateNormal(loc=jnp.zeros(x.shape[0]), covariance_matrix=k)
+               )
+          numpyro.sample("y", dist.Normal(f, sigma), obs=y)

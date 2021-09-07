@@ -65,7 +65,7 @@ class Inference():
           raise NotImplementedError
 
      # @partial(jit, static_argnums=(0,))
-     def run_mcmc(self, rng_key, y, obs_idx, model):
+     def run_mcmc(self, rng_key):
           """Run MCMC for given model and observations.
 
           Args:
@@ -81,7 +81,7 @@ class Inference():
           start = time.time()
           # we may choose other ones, but for now -- `init_to_medians`
           init_strategy = init_to_median(num_samples=10)
-          mcmc_kernel = NUTS(model, init_strategy=init_strategy)
+          mcmc_kernel = NUTS(self.regression, init_strategy=init_strategy)
           mcmc = MCMC(
                mcmc_kernel,
                num_warmup=self.mcmc_args["num_warmup"],
@@ -90,8 +90,8 @@ class Inference():
                thinning=self.mcmc_args["thinning"],
                progress_bar=False if "NUMPYRO_SPHINXBUILD" in os.environ else True,
           )
-          
-          mcmc.run(rng_key, y, obs_idx)
+
+          mcmc.run(rng_key, y=self.y, obs_idx=self.obs_idx)
           mcmc.print_summary()
           print("\nMCMC elapsed time:", time.time() - start)
 
@@ -108,18 +108,13 @@ class Inference():
           """
           rng_key, rng_key_prior, rng_key_post, rng_key_pred = random.split(self.rng_key, 4)
 
-          # we may want to check how the prediction does with prior
+          # draws from prior
           prior_predictive = Predictive(self.regression, num_samples=1000)
           prior_predictions = prior_predictive(rng_key_prior)["y_pred"]
-
           # after training, we sample from the posterior 
-          post_samples = self.run_mcmc(
-               rng_key_post, 
-               self.y, 
-               self.obs_idx, 
-               model=self.regression)
+          post_samples = self.run_mcmc(rng_key_post)
 
-          # get samples from predictive distribution
+          # get samples from posterior predictive distribution
           predictive = Predictive(self.regression, post_samples)
           predictions = predictive(rng_key_pred)["y_pred"]
           # print(predictive(rng_key_pred))
@@ -149,7 +144,7 @@ class Inference():
 
           return prior_predictions, predictions
 
-     # some plots
+     # some plots for posterior predictions or prior draws
      def plot_prediction(self, y_pred, x=None):
           """plot 1D posterior prediction.
 
@@ -163,13 +158,12 @@ class Inference():
           mean_pred = jnp.mean(y_pred, axis=0)
           hpdi_pred = hpdi(y_pred, 0.9)
           # print(np.unique(np.isnan(y_pred), return_counts=True))
-          # print(y_pred)
-          # print(mean_pred)
+
           # plt.figure()
           for i in range(20):
                plt.plot(x, y_pred[i], color="lightgray", alpha=0.2)
 
-          plt.fill_between(x.flatten(), 
+          plt.fill_between(x, 
                               hpdi_pred[0], hpdi_pred[1], 
                               alpha=0.4, interpolate=True)
           plt.plot(x, mean_pred, label="mean prediction")
@@ -180,18 +174,20 @@ class Inference():
                          color="orange", label="ground truth")
           # plt.legend(loc="upper left")
      
-     def plot_prediction2(self, y_pred, x=None):
+     def plot_prediction2(self, mean_pred, x=None):
           """plot 1D posterior prediction.
 
           Args:  
-               y_pred (ndarray) - prediction.
+               mean_pred (ndarray) - mean of posterior prediction.
                x (ndarray) - spatial locations for y.
           """
 
           if x is None:
                x = self.x
           # this is for plotting grid only!
-          mean_pred = jnp.mean(y_pred, axis=0)
+          # mean_pred = jnp.mean(mean_pred, axis=0)
+          
+          print(mean_pred)
           # hpdi_pred = hpdi(y_, 0.9)
           # diff = self.x[0, 1] - self.x[0, 0]
           plt.scatter(
@@ -244,18 +240,17 @@ class VAEInference(Inference):
                obs_idx (nd_array) - index of observation locations.
           """
 
-          noise = numpyro.sample("kernel_noise", dist.Beta(0.6, 2.0))
+          sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
           z = numpyro.sample("z", 
                               dist.Normal(jnp.zeros(self.z_dim), jnp.ones(self.z_dim)))
-
           f = numpyro.deterministic("f", self.decoder(self.decoder_params, z))
 
           if y is None: # durinig prediction
-               numpyro.sample("y_pred", dist.Normal(f, noise))
+               numpyro.sample("y_pred", dist.Normal(f, sigma))
           else: # during inference
                numpyro.sample(
                     "y", 
-                    dist.Normal(f[obs_idx], noise), 
+                    dist.Normal(f[obs_idx], sigma), 
                     obs=y[obs_idx])
 
 
@@ -289,14 +284,14 @@ class GPInference(Inference):
           """
           # set uninformative log-normal priors on three kernel hyperparameters
           # what is used in the GP inference numpyro example
-          var = numpyro.sample("kernel_var", dist.Beta(0.8, 1.5))
-          noise = numpyro.sample("kernel_noise", dist.Beta(0.6, 2.0))
+          var = numpyro.sample("kernel_var", dist.LogNormal(0.0,0.1))
+          sigma = numpyro.sample("kernel_sigma", dist.HalfNormal(0.1))
           # var = 1
           # noise = 0.001
-          ls = numpyro.sample("kernel_length", dist.Beta(0.8, 2.0))
+          ls = numpyro.sample("kernel_length",  dist.InverseGamma(4,1))
 
           # compute kernel (plus noise, i.e. nugget)
-          k = self.kernel(self.x, self.x, self.d, var, ls, noise=0, jitter=1.0e-4)
+          k = self.kernel(self.x, self.x, var=var, ls=ls)
           # k = self.kernel(self.x, self.x, self.d, var, ls, noise=noise)
 
           f = numpyro.sample(
@@ -310,13 +305,13 @@ class GPInference(Inference):
           if y is None: # durinig prediction
                numpyro.sample(
                     "y_pred", 
-                    dist.Normal(f, noise))
+                    dist.Normal(f, sigma))
                # numpyro.deterministic("y_pred", f)
                     
           else: # during inference
                numpyro.sample(
                     "y", 
-                    dist.Normal(f[obs_idx], noise),
+                    dist.Normal(f[obs_idx], sigma),
                     obs=y[obs_idx])
                # numpyro.deterministic("y", f[obs_idx])
 
@@ -328,26 +323,27 @@ class GPInference(Inference):
                x (ndarray) - observed spatial locations.
                y (ndarray) - observed values (not contain np.nan).
           """
-          var = numpyro.sample("kernel_var", dist.Beta(0.8, 1.5))
-          noise = numpyro.sample("kernel_noise", dist.Beta(0.6, 2.0))
+          var = numpyro.sample("kernel_var", dist.LogNormal(0.0,0.1))
+          sigma = numpyro.sample("kernel_sigma", dist.HalfNormal(0.1))
           # var = 1
           # noise = 0.001
-          ls = numpyro.sample("kernel_length", dist.Beta(0.8, 2.0))
+          ls = numpyro.sample("kernel_length",  dist.InverseGamma(4,1))
 
           # compute kernel
-          k = self.kernel(x, x, self.d, var, ls, noise)
+          k = self.kernel(x, x, var=var, ls=ls)
 
           # sample Y according to the standard gaussian process formula
-          numpyro.sample(
-               "y_pred",
+          f = numpyro.sample(
+               "f",
                dist.MultivariateNormal(
                     loc=jnp.zeros(x.shape[0]), 
-                    covariance_matrix=k),
-               obs=y
+                    covariance_matrix=k)
           )
 
+          numpyro.sample("y_pred", dist.Normal(f, sigma), obs=y)
+
      
-     def gp_prediction(self, rng_key, x, y, var, ls, noise):
+     def gp_prediction(self, rng_key, x, y, var, ls, sigma):
           """Prediction using kriging.
           
           Args:
@@ -356,28 +352,31 @@ class GPInference(Inference):
                y (ndarray) - function values at x (np.nan at unobservred locations).
                var (float) - marginal variance of kernel for GP prior.
                ls (flaot) - lengthscale.
-               noise (flaot) - noise on the diagonal.
+               sigma (flaot) - noise on the diagonal of Covariance matrix.
 
           Returns:
                posterior mean and posteerior samples.
           """
           # compute kernels between train and test data, etc.
-          x_test = jnp.delete(x, self.obs_idx)
+          x_test = jnp.delete(x, self.obs_idx, axis=0)
           x_obs = x[self.obs_idx]
 
-          k_pp = self.kernel(x_test, x_test, self.d, var, ls, noise)
-          k_px = self.kernel(x_test, x_obs, self.d, var, ls, noise, include_noise=False)
-          k_xx = self.kernel(x_obs, x_obs, self.d, var, ls, noise)
-          k_xx_inv = jnp.linalg.inv(k_xx)
+          print("shapee of x_test in prediction ", x_test.shape)
+          print("shapee of x_train in prediction ", x_obs.shape)
+          k_pp = self.kernel(x_test, x_test, var, ls)
+          k_px = self.kernel(x_test, x_obs, var, ls)
+          k_xx = self.kernel(x_obs, x_obs, var, ls)
+          k_xx_inv = jnp.linalg.inv(k_xx + jnp.eye(len(self.obs_idx)) * sigma)
           K = k_pp - jnp.matmul(k_px, jnp.matmul(k_xx_inv, jnp.transpose(k_px)))
-          sigma_noise = jnp.sqrt(jnp.clip(jnp.diag(K), a_min=0.0)) * jax.random.normal(
+          noise = jnp.sqrt(jnp.clip(jnp.diag(K), a_min=0.0)) * jax.random.normal(
                rng_key, x_test.shape[:1]
           )
           mean = jnp.matmul(k_px, jnp.matmul(k_xx_inv, y[self.obs_idx]))
           # return mean and samples
-          print("shape of mean GP", x_test.shape)
+          print("shape of mean GP", mean.shape)
           print(x_obs.shape)
-          return mean, mean + sigma_noise
+
+          return mean, mean + noise
      
 
      def gp_run_mcmc(self, rng_key, x, y, model):
@@ -418,20 +417,21 @@ class GPInference(Inference):
           """
           rng_key, rng_key_prior, rng_key_post, rng_key_pred = random.split(self.rng_key, 4)
 
-          # we may want to check how the prediction does with prior
-          # prior_pred = 
+          # we may want to check prior samples
+          prior_predictive = Predictive(self.regression, num_samples=1000)
+          prior_predictions = prior_predictive(rng_key_prior)["y_pred"]
+
           # after training, we sample from the posterior 
           post_samples = self.gp_run_mcmc(
                rng_key_post, 
                self.x[self.obs_idx],
                self.y[self.obs_idx], 
                model=self.gp_regression)
-
           vmap_args = (
                random.split(rng_key_pred, post_samples["kernel_var"].shape[0]),
                post_samples["kernel_var"],
                post_samples["kernel_length"],
-               post_samples["kernel_noise"],
+               post_samples["kernel_sigma"],
           )
           means, predictions = vmap(
                lambda rng_key, var, length, noise: self.gp_prediction(
@@ -453,17 +453,17 @@ class GPInference(Inference):
                # print(prior_predictions)
                plt.figure(figsize=(6, 6))
 
-               # plt.subplot(1,2,1)
-               # plot_func(prior_predictions)
-               # plt.title('Prior')
+               plt.subplot(1,2,1)
+               plot_func(prior_predictions)
+               plt.title('Prior')
 
-               # plt.subplot(1,2,2)
-               plot_func(predictions, x=jnp.delete(self.x, self.obs_idx))
+               plt.subplot(1,2,2)
+               plot_func(predictions, x=jnp.delete(self.x, self.obs_idx, axis=0))
                plt.title('Posterior')
 
                # plt.savefig('.png', bbox_inches='tight')
                plt.show()
                plt.close()
 
-          return None, predictions
+          return means, predictions
 

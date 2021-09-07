@@ -18,6 +18,7 @@ from numpyro import optim
 from numpyro.infer import SVI, Trace_ELBO, Predictive
 from numpyro.diagnostics import hpdi
 
+# update the training to allow variance to be sampled along with ls
 class VAE():
      """ 
      Implementation of VAE based on stax with 2 layer NN. 
@@ -148,12 +149,17 @@ class VAE():
           """
           def body_fn(i, val):
                rng_key_i = random.fold_in(rng_key, i)
-               rng_key_i, rng_key_ls = random.split(rng_key_i)
+               rng_key_i, rng_key_ls, rng_key_var = random.split(rng_key_i, 3)
 
                loss_sum, svi_state = val # val -- svi_state
                # directly draw sample from the GP for a random lengthscale
-               length_i = numpyro.sample("length", dist.Beta(0.8, 2.0), rng_key=rng_key_ls)
-               batch = self.gp_predictive(rng_key_i, length_i, self.x)
+               # length_i = numpyro.sample("length", dist.InverseGamma(4,1), rng_key=rng_key_ls)
+               # var_i = numpyro.sample("var", dist.LogNormal(0, 0.1), rng_key=rng_key_var)
+               # var_i=1
+               batch = self.gp_predictive(rng_key_i, self.x
+               # , length_i, var_i
+               )
+               
 
                # `update` returns (svi_state, loss)
                svi_state, loss = self.svi.update(svi_state, batch['y']) 
@@ -162,7 +168,7 @@ class VAE():
 
           return lax.fori_loop(0, self.num_train, body_fn, (0.0, svi_state))
      
-     @partial(jit, static_argnums=(0,))
+     # @partial(jit, static_argnums=(0,))
      def eval_test(self, rng_key, svi_state):
           """Test VAE with samples drawn from GP with random lengthscale in each batch.
 
@@ -175,10 +181,14 @@ class VAE():
           """
           def body_fn(i, loss_sum):
                rng_key_i = random.fold_in(rng_key, i) 
-               rng_key_i, rng_key_ls = random.split(rng_key_i)
+               rng_key_i, rng_key_ls, rng_key_var = random.split(rng_key_i, 3)
                
-               length_i = numpyro.sample("length", dist.Beta(0.8, 2.0), rng_key=rng_key_ls)
-               batch = self.gp_predictive(rng_key_i, length_i, self.x)
+               # length_i = numpyro.sample("length", dist.InverseGamma(4,1), rng_key=rng_key_ls)
+               # var_i = numpyro.sample("var", dist.LogNormal(0, 0.1), rng_key=rng_key_var)
+               # var_i=1
+               batch = self.gp_predictive(rng_key_i, self.x
+               # , length_i, var_i
+               )
 
                loss = self.svi.evaluate(svi_state, batch['y']) / self.batch_size
                loss_sum += loss
@@ -206,13 +216,13 @@ class VAE():
                Trace_ELBO()
           )
           # encoder_nn = self.vae_encoder()
-          decoder_nn = self.vae_decoder()
+          # decoder_nn = self.vae_decoder()
           rng_key, rng_key_samp, rng_key_init = random.split(self.rng_key, 3)
 
           self.gp_predictive = Predictive(self.gp.sample, num_samples=self.batch_size)
 
           # initialise with a sample batch
-          sample_batch = self.gp_predictive(rng_key=rng_key_samp, ls=0.1, x=self.x)
+          sample_batch = self.gp_predictive(rng_key=rng_key_samp, x=self.x, ls=0.1, var=1)
           
           svi_state = self.svi.init(rng_key_init, sample_batch['y'])
           test_loss_list = []
@@ -230,15 +240,18 @@ class VAE():
                          i, test_loss, time.time() - t_start
                     )
                )
+          
+               if np.isnan(test_loss): break
 
           if plot_loss:
                plt.figure()
-               plt.plot(np.arange(0, self.num_epochs, 1), test_loss_list)
+               plt.plot(np.arange(0, self.num_epochs, 1)[0:len(test_loss_list)], test_loss_list)
                plt.xlabel("epochs")
                plt.ylabel("test error")
+               plt.savefig('src/test/plots/vae_lost.png')
                plt.show()
                plt.close()
 
-          # decoder and optimal parameters for decoder
-          return decoder_nn[1], self.svi.get_params(svi_state)["decoder$params"]
+          # return optimal parameters for decoder
+          return self.svi.get_params(svi_state)["decoder$params"]
           

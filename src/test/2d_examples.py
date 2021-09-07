@@ -53,7 +53,7 @@ def example_gp2(rng_key, n, x, noise=0.001, plot_y=True):
      return ground_truth, y
 
     
-def main(args, example, dat_noise=0.001):
+def vae_mcmc(args, example, dat_noise=0.001):
      """ Plot posterior predictions for varying size of unserved locations
      with index ranging from 1, 10, 100, 200 for a total of 300 (default) 
      dense grid over [0,1].
@@ -61,7 +61,7 @@ def main(args, example, dat_noise=0.001):
      example: string, example function used to generate data
      dat_noise: float, added noise to generated data"""
 
-     assert args.d is 2
+     assert args.d==2
 
      if args.kernel == "exponential2":
           kernel = exp_kernel2
@@ -79,7 +79,12 @@ def main(args, example, dat_noise=0.001):
      x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
 
      # VAE training
-     gp = GP(kernel=kernel, var=args.var, noise=args.noise, d=args.d) # ls is random in training
+     gp = GP(
+          kernel=kernel, 
+          var=args.var, 
+          noise=args.noise, 
+          jitter=args.jitter, 
+          d=args.d) # ls is random in training
      vae = VAE(
           gp,
           args.hidden_dims, # list
@@ -107,7 +112,7 @@ def main(args, example, dat_noise=0.001):
      rng_key = random.PRNGKey(args.seed+1)
 
      # generate data for inference
-     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise, plot_y=False)
+     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
      # initialise the Inference object
      inference = VAEInference(
           decoder, decoder_params,
@@ -149,12 +154,12 @@ def main(args, example, dat_noise=0.001):
 
           # plot
           ## prior
-          plt.subplot(4,2,2*i+1)
-          inference.plot_prediction2(prior_pred)
-          plt.title('Prior-'+k)
+          # plt.subplot(2,2,2*i+1)
+          # inference.plot_prediction2(prior_pred)
+          # plt.title('Prior-'+k)
 
           # posterior
-          plt.subplot(4,2,2*i+2)
+          plt.subplot(2,2,2*i+1)
           inference.plot_prediction2(pred)        
           plt.title('Posterior-'+k)
      
@@ -162,6 +167,88 @@ def main(args, example, dat_noise=0.001):
      # plt.savefig('src/test/plots/vae_mcmc_{}.png'.format(example))
      plt.show()
      plt.close()
+
+
+def gp_krig(args, example, dat_noise=0):
+     assert args.d is 2
+
+     if args.kernel == "exponential2":
+          kernel = exp_kernel2
+     else:
+          raise NotImplementedError
+     
+     if example == "gp2":
+          example_func = example_gp2
+     else:
+          raise NotImplementedError
+
+     # n by n grid over [0,1]x[0,1]
+     grid = jnp.arange(0, 1, 1/args.n)
+     u, v = jnp.meshgrid(grid, grid)
+     x = jnp.array([u.flatten(), v.flatten()]).transpose((1, 0))
+
+     # context points are 1, 300, 700, 1200
+     obs_idx_dict = {}
+     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n**2).tolist(), k=100))
+     obs_idx_dict['300'] = (obs_idx_dict['100'] 
+                              + list(rd.sample(np.arange(args.n**2).tolist(), k=200)))
+     obs_idx_dict['700'] = (obs_idx_dict['300'] 
+                              + list(rd.sample(np.arange(args.n**2).tolist(), k=400)))
+     obs_idx_dict['1200'] = (obs_idx_dict['700'] 
+                              + list(rd.sample(np.arange(args.n**2).tolist(), k=500)))
+
+     rng_key = random.PRNGKey(args.seed+1)
+
+     # generate data for inference
+     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
+     print("what is going on")
+     # do inference
+     inference = GPInference(
+          kernel,
+          args.d,
+          x, None, # None for generated data, y_filtered
+          args.obs_idx,
+          args.mcmc_args,
+          args.seed,
+          ground_truth
+          )
+     
+     plt.figure(figsize=(15, 12.5))
+
+     # Inference
+     for i, item in enumerate(obs_idx_dict.items()):
+          print(i)
+          k, obs_idx = item
+          obs_idx = jnp.asarray(obs_idx)
+
+          # mask unobserved y
+          mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
+          unobs_idx = jnp.arange(args.n)[~mask]
+          y_filtered = ops.index_update(y, unobs_idx, np.NaN)
+
+          # update observation locations
+          inference.obs_idx = obs_idx
+          inference.y = y_filtered
+
+          # obtain predictions
+          mean_pred, pred = inference.gp_fit(plot=False)
+          print(mean_pred.shape)
+          mean_pred_ = y_filtered
+          mean_pred_ = ops.index_update(mean_pred_, unobs_idx, mean_pred)
+          
+          ## posterior
+          # plt.subplot(2,1,i+1)
+          # inference.plot_prediction(prior_pred)
+          # plt.title('Posterior-'+k)
+          plt.subplot(2,2,i+1)
+          inference.plot_prediction2(mean_pred_, x=jnp.delete(x, obs_idx, axis=0))
+          plt.title('Posterior-'+k)
+     
+     plt.tight_layout()
+     plt.savefig('src/test/plots/gp_krig_{}.png'.format(example))
+     plt.show()
+     plt.close()
+
 
 
 def args_parser():
@@ -177,8 +264,11 @@ def args_parser():
                          type=float, help="lengthscale of kernel")
      parser.add_argument("--noise", default=0.0, 
                          type=float, help="additional noise of GP")
+     parser.add_argument("--jitter", default=1.0e-5, 
+                         type=float, help="fixed additional noise to kernel diagonal for numerical stability")
+     
      # VAE
-     parser.add_argument("--n", default=100, 
+     parser.add_argument("--n", default=25, 
                          type=int, help="number of point on grid")
      parser.add_argument("--hidden-dims", default=[50,30], 
                          type=list, help="dimension of hidden layers for encoder/decoder")
@@ -228,7 +318,9 @@ if __name__ == "__main__":
      # else:
      #      raise NotImplementedError
 
-     # example_gp2(rng_key, n, x)
+     # example_gp2(rng_key, n, x, 0.001)
 
      args = args_parser()
-     main(args, "gp2")
+     # vae_mcmc(args, "gp2")
+
+     gp_krig(args, "gp2", 0.001)

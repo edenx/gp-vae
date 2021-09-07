@@ -1,6 +1,8 @@
 import os,sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 
+import pickle
+
 # general libraries
 import time
 import numpy as np
@@ -68,20 +70,35 @@ def example_trig(rng_key, n, x, noise=0, plot_y=True):
      return ground_truth, y
 
 # draws from GP
-def example_gp(rng_key, n, x, noise=0, plot_y=True):
+def example_gp(
+     rng_key, 
+     x, 
+     ls=None, # ls=0.07,
+     var=None, # var=0.5,
+     sigma=None, # sigma=0, 
+     jitter=1.0e-5,
+     plot_y=True,
+     num_samp=1
+     ):
      # we use the default kwargs in GP apart from noise
-     gp_y = GP(kernel=exp_kernel2, noise=noise)
-     y = Predictive(gp_y.sample, num_samples=1)(rng_key=rng_key, ls=0.04, x=x)["y"][0]
+     gp_y = GP(kernel=exp_kernel2, jitter=jitter, d=1)
+     y = Predictive(gp_y.sample, num_samples=num_samp)(rng_key=rng_key, x=x, ls=ls, var=var, sigma=sigma)["y"]
+     
+     ground_truth = {"x": x, 
+                    "y": y[0]}
+     
+     if plot_y:
+          plt.figure()
+          for i in range(num_samp):
+               # plt.plot(ground_truth["x"], 
+               #           ground_truth["y"][i], c="lightgray")
+               plt.plot(x, y[i])
+          # plt.scatter(x, y_filtered, color="orange", label="observed")
+          # plt.legend(loc="upper left")  
+          plt.show()
+          plt.close()
 
-     # smoothing for plotting with spline
-     # 40 represents number of points to make between x.min and x.max
-     x_new = np.linspace(x.min(), x.max(), 40) 
-     spl = make_interp_spline(x, y, k=3)  # type: BSpline
-     power_smooth = spl(x_new)
-     ground_truth = {"x": x_new, 
-                    "y": power_smooth}
-
-     return ground_truth, y
+     return ground_truth, y[0]
      
 def vae_mcmc(args, example, dat_noise=0):
      """ Plot posterior predictions for varying size of unserved locations
@@ -93,14 +110,8 @@ def vae_mcmc(args, example, dat_noise=0):
      """
 
      assert args.d is 1
-
-     if args.kernel == "exponential2":
-          kernel = exp_kernel2
-     # elif args.kernel == "exponential1":
-     #      kernel = exp_kernel1
-     else:
-          raise NotImplementedError
      
+     # generate example data ------------------------------------------------
      if example == "cubic":
           example_func = example_cubic
      elif example == "trig":
@@ -113,15 +124,24 @@ def vae_mcmc(args, example, dat_noise=0):
      # n points over [0,1]
      x = jnp.arange(0, 1, 1/args.n)
 
-     # VAE training
-     # ls is random in training
+     rng_key = random.PRNGKey(args.seed+1)
+     # generate data for inference
+     ground_truth, y = example_func(rng_key, x, sigma=dat_noise, plot_y=False)
+
+     # setup GP ---------------------------------------------------------------
+     if args.kernel == "exponential2":
+          kernel = exp_kernel2
+     # elif args.kernel == "exponential1":
+     #      kernel = exp_kernel1
+     else:
+          raise NotImplementedError
+     # ls, var and noise are random in training
      gp = GP(
           kernel=kernel, 
-          var=args.var, 
-          noise=args.noise, 
           jitter=args.jitter, 
           d=args.d)
-           
+     
+     # VAE training -----------------------------------------------------------
      vae = VAE(
           gp,
           args.hidden_dims, # list
@@ -134,19 +154,19 @@ def vae_mcmc(args, example, dat_noise=0):
           args.num_test,
           x,
           args.seed)
-     decoder, decoder_params = vae.fit()
 
-     # context points are 1, 10, 40, 100
-     obs_idx_dict = {}
-     obs_idx_dict['1'] = [100]
-     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
-     obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=50))
-     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+     decoder = vae.vae_decoder()[1]
+     decoder_params = vae.fit(plot_loss=True)
+     # Save decoder params
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'wb') as file:
+          pickle.dump(decoder_params, file)
 
-     rng_key = random.PRNGKey(args.seed+1)
+     # open decoder params from file
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'rb') as file:
+          decoder_params = pickle.load(file)
+     print(decoder_params)
 
-     # generate data for inference
-     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
+     # Inference --------------------------------------------------------------
 
      # initialise the Inference object
      inference = VAEInference(
@@ -159,19 +179,37 @@ def vae_mcmc(args, example, dat_noise=0):
           ground_truth
           )
 
-     plt.figure(figsize=(15, 12.5))
+     # plot samples fromtrained VAE prior -------------------------------------
+     vae_predictive = Predictive(inference.regression, num_samples=10)
+     rng_key, rng_key_predict = random.split(random.PRNGKey(1))
+     vae_draws = vae_predictive(rng_key_predict)['y_pred']
 
-     # Inference
+     plt.figure()
+     for i in range(10):
+          plt.plot(x, vae_draws[i])
+     plt.show()
+     plt.close()
+
+     # posterior plot for increasing number of context pnts --------------------
+     # context points are 1, 10, 40, 100
+     obs_idx_dict = {}
+     obs_idx_dict['1'] = [100]
+     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+     obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=40))
+     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+
+     plt.figure(figsize=(15, 12.5))
      for i, item in enumerate(obs_idx_dict.items()):
           print(i)
           k, obs_idx = item
+ 
           obs_idx = jnp.asarray(obs_idx)
-
           # mask unobserved y
           mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
           unobs_idx = jnp.arange(args.n)[~mask]
-          y_filtered = ops.index_update(y, unobs_idx, np.NaN)
+          y_filtered = ops.index_update(y, ops.index[unobs_idx], np.nan)
 
+     
           # update observation locations
           inference.obs_idx = obs_idx
           inference.y = y_filtered
@@ -190,85 +228,85 @@ def vae_mcmc(args, example, dat_noise=0):
      plt.close()
 
 
-def gp_mcmc(args, example, dat_noise=0):
+# def gp_mcmc(args, example, dat_noise=0):
 
-     assert args.d is 1
+#      assert args.d is 1
 
-     if args.kernel == "exponential2":
-          kernel = exp_kernel2
-     # elif args.kernel == "exponential1":
-     #      kernel = exp_kernel1
-     else:
-          raise NotImplementedError
+#      if args.kernel == "exponential2":
+#           kernel = exp_kernel2
+#      # elif args.kernel == "exponential1":
+#      #      kernel = exp_kernel1
+#      else:
+#           raise NotImplementedError
      
-     if example == "cubic":
-          example_func = example_cubic
-     elif example == "trig":
-          example_func = example_trig
-     elif example == "gp":
-          example_func = example_gp
-     else:
-          raise NotImplementedError
+#      if example == "cubic":
+#           example_func = example_cubic
+#      elif example == "trig":
+#           example_func = example_trig
+#      elif example == "gp":
+#           example_func = example_gp
+#      else:
+#           raise NotImplementedError
 
-     # n points over [0,1]
-     x = jnp.arange(0, 1, 1/args.n)
+#      # n points over [0,1]
+#      x = jnp.arange(0, 1, 1/args.n)
 
-     # context points are 1, 10, 100, 200
-     obs_idx_dict = {}
-     # obs_idx_dict['1'] = [100]
-     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
-     # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
-     # obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+#      # context points are 1, 10, 100, 200
+#      obs_idx_dict = {}
+#      # obs_idx_dict['1'] = [100]
+#      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+#      # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+#      # obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
 
-     rng_key = random.PRNGKey(args.seed+1)
+#      rng_key = random.PRNGKey(args.seed+1)
 
-     # generate data for inference
-     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
+#      # generate data for inference
+#      ground_truth, y = example_func(rng_key, args.n, x, sigma=dat_noise)
 
      
-     inference = GPInference(
-          kernel,
-          args.d,
-          x, None, # None for generated data, y_filtered
-          args.obs_idx,
-          args.mcmc_args,
-          args.seed,
-          ground_truth
-          )
+#      inference = GPInference(
+#           kernel,
+#           args.d,
+#           x, None, # None for generated data, y_filtered
+#           args.obs_idx,
+#           args.mcmc_args,
+#           args.seed,
+#           ground_truth
+#           )
 
-     plt.figure(figsize=(15, 12.5))
+#      plt.figure(figsize=(15, 12.5))
 
-     # Inference
-     for i, item in enumerate(obs_idx_dict.items()):
-          print(i)
-          k, obs_idx = item
-          obs_idx = jnp.asarray(obs_idx)
+#      # Inference
+#      for i, item in enumerate(obs_idx_dict.items()):
+#           print(i)
+#           k, obs_idx = item
+#           obs_idx = jnp.asarray(obs_idx)
 
-          # mask unobserved y
-          mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
-          unobs_idx = jnp.arange(args.n)[~mask]
-          y_filtered = ops.index_update(y, unobs_idx, np.NaN)
+#           # mask unobserved y
+#           mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
+#           unobs_idx = jnp.arange(args.n)[~mask]
+#           y_filtered = ops.index_update(y, unobs_idx, np.NaN)
 
-          # update observation locations
-          inference.obs_idx = obs_idx
-          inference.y = y_filtered
+#           # update observation locations
+#           inference.obs_idx = obs_idx
+#           inference.y = y_filtered
 
-          # obtain predictions
-          prior_pred, pred = inference.fit(plot=False)
+#           # obtain predictions
+#           prior_pred, pred = inference.fit(plot=False)
 
-          ## posterior
-          plt.subplot(2,1,i+1)
-          inference.plot_prediction(prior_pred)
-          plt.title('Posterior-'+k)
+#           ## posterior
+#           plt.subplot(2,1,i+1)
+#           inference.plot_prediction(prior_pred)
+#           plt.title('Posterior-'+k)
 
-          plt.subplot(2,1,i+2)
-          inference.plot_prediction(pred)
-          plt.title('Posterior-'+k)
+#           plt.subplot(2,1,i+2)
+#           inference.plot_prediction(pred)
+#           plt.title('Posterior-'+k)
      
-     plt.tight_layout()
-     # plt.savefig('src/test/plots/gp_mcmc_{}.png'.format(example))
-     plt.show()
-     plt.close()
+#      plt.tight_layout()
+#      # plt.savefig('src/test/plots/gp_mcmc_{}.png'.format(example))
+#      plt.show()
+#      plt.close()
 
 
 def gp_krig(args, example, dat_noise=0):
@@ -292,19 +330,17 @@ def gp_krig(args, example, dat_noise=0):
 
      # n points over [0,1]
      x = jnp.arange(0, 1, 1/args.n)
+     rng_key = random.PRNGKey(args.seed+1)
+     # generate data for inference
+     ground_truth, y = example_func(rng_key, x=x, sigma=dat_noise)
 
-     # context points are 1, 10, 100, 200
+     # context points are 1, 10, 40, 100
      obs_idx_dict = {}
      obs_idx_dict['1'] = [200]
      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
-     obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=50))
-     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
-
-     rng_key = random.PRNGKey(args.seed+1)
-
-     # generate data for inference
-     ground_truth, y = example_func(rng_key, args.n, x, noise=dat_noise)
-
+     obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=40))
+     obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+     
      # do inference
      inference = GPInference(
           kernel,
@@ -333,8 +369,9 @@ def gp_krig(args, example, dat_noise=0):
           inference.obs_idx = obs_idx
           inference.y = y_filtered
 
-          # obtain predictions
+          # obtain predictions and update 
           _, pred = inference.gp_fit(plot=False)
+         
           ## posterior
           # plt.subplot(2,1,i+1)
           # inference.plot_prediction(prior_pred)
@@ -348,6 +385,10 @@ def gp_krig(args, example, dat_noise=0):
      plt.show()
      plt.close()
 
+     
+
+
+
 
 
 def args_parser():
@@ -359,9 +400,9 @@ def args_parser():
                          type=str)
      parser.add_argument("--var", default=1, 
                          type=int, help="marginal variance of kernel")
-     parser.add_argument("--ls", default=0.01, 
+     parser.add_argument("--ls", default=0.27, 
                          type=float, help="lengthscale of kernel")
-     parser.add_argument("--noise", default=0.0, 
+     parser.add_argument("--sigma", default=0.0, 
                          type=float, help="random noise of training sample")
      parser.add_argument("--jitter", default=1.0e-5, 
                          type=float, help="fixed additional noise to kernel diagonal for numerical stability")
@@ -372,7 +413,7 @@ def args_parser():
                          type=list, help="dimension of hidden layers for encoder/decoder")
      parser.add_argument("--z-dim", default=10, 
                          type=int, help="bottleneck dimension")
-     parser.add_argument("--batch-size", default=1000, 
+     parser.add_argument("--batch-size", default=100, 
                          type=int, help="size of minibatch")
      parser.add_argument("--learning-rate", default=1.0e-3, 
                          type=float)
@@ -382,7 +423,7 @@ def args_parser():
                          type=int)
      parser.add_argument("--num-test", default=1000, 
                          type=int)
-     parser.add_argument("--seed", default=0, 
+     parser.add_argument("--seed", default=1, 
                          type=int, help="seed to generatee rng_keys")
      
      # MCMC
@@ -403,13 +444,34 @@ def args_parser():
 
 if __name__ == "__main__":
 
+     
      # use jitter=1.0e-5 for numerical stability
      # use noise=0.0 for training samples from GP
      args = args_parser()
      # gp with dat_noise=0.001
      # krig with dat_noise=0.1
-     vae_mcmc(args, "gp", dat_noise=0.001) 
+     # vae_mcmc(args, "gp", dat_noise=0) 
      # VAE not performing well on small lengthscale
      # why?
 
-     # gp_krig(args, "gp", 0.001)
+     gp_krig(args, "gp", 0.0)
+     
+     x = jnp.arange(0, 1, 1/args.n)
+
+     # context points are 1, 10, 100, 200
+     obs_idx_dict = {}
+     # obs_idx_dict['1'] = [100]
+     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+     # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+     # obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+
+     rng_key = random.PRNGKey(args.seed)
+
+     example_gp(rng_key, x, 
+     ls=0.07,
+     var=0.5,
+     sigma=None, 
+     jitter=1.0e-5,
+     plot_y=True,
+     num_samp=1
+     )
