@@ -246,7 +246,8 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
 
      rng_key = random.PRNGKey(args.seed)
      # observation locations
-     obs_idx = jnp.asarray(list(rd.sample(np.arange(args.n).tolist(), k=20)))
+     obs_idx = jnp.asarray([20, 23, 100, 110, 117, 130, 133, 140, 170, 190, 
+                              210, 213, 234, 244, 246, 248, 252, 267, 269, 278])
 
      gp_y = GP(kernel=exp_kernel2, jitter=args.jitter, d=1)
      y_Predictive = Predictive(gp_y.sample, num_samples=1)
@@ -588,14 +589,14 @@ if __name__ == "__main__":
      args = args_parser()
 
      x = jnp.arange(0, 1, 1/args.n)
-     vae_mcmc(args, x, "gp", dat_noise=0.0) 
+     # vae_mcmc(args, x, "gp", dat_noise=0.0) 
 
      # gp_krig(args, x, "gp", 0.0)
      
      # varying lengthscales
-     lengths_list = [2.96, 0.05, 0.27]
+     lengths_list = [3.1, 0.05, 0.27]
 
-     # vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
+     vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
 
      # # context points are 1, 10, 100, 200
      obs_idx_dict = {}
