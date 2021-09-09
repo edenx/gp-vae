@@ -159,14 +159,14 @@ def vae_mcmc(args, x, example, dat_noise=0):
           args.seed)
 
      decoder = vae.vae_decoder()[1]
-     decoder_params = vae.fit(plot_loss=True)
+     # decoder_params = vae.fit(plot_loss=True)
      # Save decoder params
-     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'wb') as file:
-          pickle.dump(decoder_params, file)
+     # with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'wb') as file:
+     #      pickle.dump(decoder_params, file)
 
      # # open decoder params from file
-     # with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'rb') as file:
-     #      decoder_params = pickle.load(file)
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls', 'rb') as file:
+          decoder_params = pickle.load(file)
 
      # Inference --------------------------------------------------------------
 
@@ -225,7 +225,7 @@ def vae_mcmc(args, x, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/vae_mcmc_{}.png'.format(example))
+     plt.savefig('src/test/plots/vae_mcmc_{}_fixls.png'.format(example))
      plt.show()
      plt.close()
 
@@ -286,7 +286,7 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
      #      pickle.dump(decoder_params, file)
 
      # open decoder params from file
-     with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls', 'rb') as file:
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'rb') as file:
           decoder_params = pickle.load(file)
 
      # Inference --------------------------------------------------------------
@@ -362,7 +362,7 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
           plt.title('VAE-lengthscale-{}'.format(ls))
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/gp_vae_ls_1d_fixls.png')
+     plt.savefig('src/test/plots/gp_vae_ls_1d.png')
      plt.show()
      plt.close()
 
@@ -588,14 +588,14 @@ if __name__ == "__main__":
      args = args_parser()
 
      x = jnp.arange(0, 1, 1/args.n)
-     # vae_mcmc(args, x, "gp", dat_noise=0.0) 
+     vae_mcmc(args, x, "gp", dat_noise=0.0) 
 
      # gp_krig(args, x, "gp", 0.0)
      
      # varying lengthscales
      lengths_list = [2.96, 0.05, 0.27]
 
-     vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
+     # vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
 
      # # context points are 1, 10, 100, 200
      obs_idx_dict = {}
