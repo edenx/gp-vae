@@ -149,15 +149,16 @@ class VAE():
           """
           def body_fn(i, val):
                rng_key_i = random.fold_in(rng_key, i)
-               rng_key_i, rng_key_ls, rng_key_var = random.split(rng_key_i, 3)
+               rng_key_i, rng_key_ls, rng_key_var, rng_key_sigma = random.split(rng_key_i, 4)
 
                loss_sum, svi_state = val # val -- svi_state
+
                # directly draw sample from the GP for a random lengthscale
-               # length_i = numpyro.sample("length", dist.InverseGamma(4,1), rng_key=rng_key_ls)
-               # var_i = numpyro.sample("var", dist.LogNormal(0, 0.1), rng_key=rng_key_var)
-               # var_i=1
+               # length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
+               # var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
+               # sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
                batch = self.gp_predictive(rng_key_i, self.x
-               # , length_i, var_i
+               # , ls=length_i, var=var_i, sigma=sigma_i
                )
                
 
@@ -181,13 +182,14 @@ class VAE():
           """
           def body_fn(i, loss_sum):
                rng_key_i = random.fold_in(rng_key, i) 
-               rng_key_i, rng_key_ls, rng_key_var = random.split(rng_key_i, 3)
+               rng_key_i, rng_key_ls, rng_key_var, rng_key_sigma = random.split(rng_key_i, 4)
                
-               # length_i = numpyro.sample("length", dist.InverseGamma(4,1), rng_key=rng_key_ls)
-               # var_i = numpyro.sample("var", dist.LogNormal(0, 0.1), rng_key=rng_key_var)
-               # var_i=1
+               # length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
+               # var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
+               # sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
+ 
                batch = self.gp_predictive(rng_key_i, self.x
-               # , length_i, var_i
+               # , ls=length_i, var=var_i, sigma=sigma_i
                )
 
                loss = self.svi.evaluate(svi_state, batch['y']) / self.batch_size
@@ -222,7 +224,7 @@ class VAE():
           self.gp_predictive = Predictive(self.gp.sample, num_samples=self.batch_size)
 
           # initialise with a sample batch
-          sample_batch = self.gp_predictive(rng_key=rng_key_samp, x=self.x, ls=0.1, var=1)
+          sample_batch = self.gp_predictive(rng_key=rng_key_samp, x=self.x)
           
           svi_state = self.svi.init(rng_key_init, sample_batch['y'])
           test_loss_list = []

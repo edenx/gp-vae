@@ -76,9 +76,9 @@ def example_trig(rng_key, x, noise=0, plot_y=True):
 def example_gp(
      rng_key, 
      x, 
-     ls=None, # ls=0.07,
+     ls=0.05, # ls=0.07,
      var=None, # var=0.5,
-     noise=0, # sigma=0, 
+     noise=None, # sigma=0, 
      jitter=1.0e-5,
      plot_y=True,
      num_samp=1
@@ -159,15 +159,14 @@ def vae_mcmc(args, x, example, dat_noise=0):
           args.seed)
 
      decoder = vae.vae_decoder()[1]
-     # decoder_params = vae.fit(plot_loss=True)
-     # # Save decoder params
-     # with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'wb') as file:
-     #      pickle.dump(decoder_params, file)
+     decoder_params = vae.fit(plot_loss=True)
+     # Save decoder params
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'wb') as file:
+          pickle.dump(decoder_params, file)
 
-     # open decoder params from file
-     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'rb') as file:
-          decoder_params = pickle.load(file)
-     print(decoder_params)
+     # # open decoder params from file
+     # with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'rb') as file:
+     #      decoder_params = pickle.load(file)
 
      # Inference --------------------------------------------------------------
 
@@ -287,9 +286,8 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
      #      pickle.dump(decoder_params, file)
 
      # open decoder params from file
-     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'rb') as file:
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls', 'rb') as file:
           decoder_params = pickle.load(file)
-     print(decoder_params)
 
      # Inference --------------------------------------------------------------
 
@@ -311,7 +309,18 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
           args.mcmc_args,
           args.seed
           )
-     
+
+     # plot samples fromtrained VAE prior -------------------------------------
+     vae_predictive = Predictive(inference_vae.regression, num_samples=10)
+     rng_key, rng_key_predict = random.split(random.PRNGKey(1))
+     vae_draws = vae_predictive(rng_key_predict)['y_pred']
+
+     plt.figure()
+     for i in range(10):
+          plt.plot(x, vae_draws[i])
+     plt.show()
+     plt.close()
+
      # plot for varying lengthscales -----------------------------------------------------
      plt.figure(figsize=(19, 12.5))
      for i, ls in enumerate(lengths_list):
@@ -353,7 +362,7 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
           plt.title('VAE-lengthscale-{}'.format(ls))
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/gp_vae_ls_1d.png')
+     plt.savefig('src/test/plots/gp_vae_ls_1d_fixls.png')
      plt.show()
      plt.close()
 
@@ -579,29 +588,26 @@ if __name__ == "__main__":
      args = args_parser()
 
      x = jnp.arange(0, 1, 1/args.n)
-     # vae_mcmc(args, x, "trig", dat_noise=0.0) 
+     # vae_mcmc(args, x, "gp", dat_noise=0.0) 
 
      # gp_krig(args, x, "gp", 0.0)
      
-     # set jitter to 
+     # varying lengthscales
      lengths_list = [2.96, 0.05, 0.27]
 
      vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
 
      # # context points are 1, 10, 100, 200
-     # obs_idx_dict = {}
+     obs_idx_dict = {}
      # # obs_idx_dict['1'] = [100]
-     # obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
      # # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
      # # obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
 
-     # rng_key = random.PRNGKey(args.seed)
+     rng_key = random.PRNGKey(args.seed)
 
      # example_gp(rng_key, x, 
-     # ls=0.07,
-     # var=0.5,
-     # noise=None, 
      # jitter=1.0e-5,
      # plot_y=True,
-     # num_samp=1
+     # num_samp=10
      # )

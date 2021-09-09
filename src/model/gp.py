@@ -162,7 +162,7 @@ class GP():
           """
 
           if ls is None:
-               ls = numpyro.sample("length", dist.InverseGamma(4,1))
+               ls = numpyro.sample("length", dist.InverseGamma(1,0.1))
           if var is None:
                var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
           if sigma is None:
