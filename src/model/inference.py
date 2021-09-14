@@ -185,9 +185,8 @@ class Inference():
           if x is None:
                x = self.x
           # this is for plotting grid only!
-          # mean_pred = jnp.mean(mean_pred, axis=0)
+          # mean_pred = jnp.mean(pred, axis=0)
           
-          print(mean_pred)
           # hpdi_pred = hpdi(y_, 0.9)
           # diff = self.x[0, 1] - self.x[0, 0]
           plt.scatter(

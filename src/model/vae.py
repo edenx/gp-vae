@@ -154,11 +154,11 @@ class VAE():
                loss_sum, svi_state = val # val -- svi_state
 
                # directly draw sample from the GP for a random lengthscale
-               # length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
-               # var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
-               # sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
+               length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
+               var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
+               sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
                batch = self.gp_predictive(rng_key_i, self.x
-               # , ls=length_i, var=var_i, sigma=sigma_i
+               , ls=length_i, var=var_i, sigma=sigma_i
                )
                
 
@@ -184,12 +184,12 @@ class VAE():
                rng_key_i = random.fold_in(rng_key, i) 
                rng_key_i, rng_key_ls, rng_key_var, rng_key_sigma = random.split(rng_key_i, 4)
                
-               # length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
-               # var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
-               # sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
+               length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
+               var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
+               sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
  
                batch = self.gp_predictive(rng_key_i, self.x
-               # , ls=length_i, var=var_i, sigma=sigma_i
+               , ls=length_i, var=var_i, sigma=sigma_i
                )
 
                loss = self.svi.evaluate(svi_state, batch['y']) / self.batch_size

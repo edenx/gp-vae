@@ -160,15 +160,27 @@ class GP():
           Returns:
                sampler for y.
           """
+          
+          if self.d==1:
 
-          if ls is None:
-               ls = numpyro.sample("length", dist.InverseGamma(1,0.1))
-          if var is None:
-               var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
-          if sigma is None:
-               sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
+               if ls is None:
+                    ls = numpyro.sample("length", dist.InverseGamma(1,0.1))
+               if var is None:
+                    var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
+               if sigma is None:
+                    sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
 
-          k = self.kernel(x, x, var, ls, self.jitter)
+          elif self.d==2:
+
+               if ls is None:
+                    ls = numpyro.sample("length", dist.InverseGamma(3,1))
+               if var is None:
+                    var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
+               if sigma is None:
+                    sigma = 0.002
+          else:
+               raise NotImplementedError
+
 
           ## Sanity check: if length/dx ->1: OK,  if length/dx -> Inf: covariance becomes degenerate
           # logdetK = np.linalg.slogdet(np.asarray(k))[0] * np.linalg.slogdet(np.asarray(k))[1]
@@ -179,6 +191,8 @@ class GP():
           # print("length / dx = " + str(ls/dx))
 
           # sample Y according to the standard gaussian process formula
+          k = self.kernel(x, x, var, ls, self.jitter)
+
           f = numpyro.sample(
                "f",
                dist.MultivariateNormal(loc=jnp.zeros(x.shape[0]), covariance_matrix=k)

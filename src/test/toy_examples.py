@@ -103,7 +103,7 @@ def example_gp(
 
      return ground_truth, y[0]
      
-def vae_mcmc(args, x, example, dat_noise=0):
+def vae_mcmc(args, x, example, dat_noise=0.001):
      """ Plot posterior predictions for varying size of unserved locations
      with index ranging from 1, 10, 40, 100 for a total of 300 (default) 
      dense grid over [0,1].
@@ -159,14 +159,14 @@ def vae_mcmc(args, x, example, dat_noise=0):
           args.seed)
 
      decoder = vae.vae_decoder()[1]
-     # decoder_params = vae.fit(plot_loss=True)
+     decoder_params = vae.fit(plot_loss=True)
      # Save decoder params
-     # with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'wb') as file:
-     #      pickle.dump(decoder_params, file)
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls_ep70', 'wb') as file:
+          pickle.dump(decoder_params, file)
 
      # # open decoder params from file
-     with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls', 'rb') as file:
-          decoder_params = pickle.load(file)
+     # with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls_ep70', 'rb') as file:
+     #      decoder_params = pickle.load(file)
 
      # Inference --------------------------------------------------------------
 
@@ -225,7 +225,7 @@ def vae_mcmc(args, x, example, dat_noise=0):
           plt.title('Posterior-'+k)
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/vae_mcmc_{}_fixls.png'.format(example))
+     plt.savefig('src/test/plots/vae_mcmc_{}_fixls_ep_70.png'.format(example))
      plt.show()
      plt.close()
 
@@ -245,7 +245,7 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
      # x = jnp.arange(0, 1, 1/args.n) # change it to input
 
      rng_key = random.PRNGKey(args.seed)
-     # observation locations
+     # 20 observation locations
      obs_idx = jnp.asarray([20, 23, 100, 110, 117, 130, 133, 140, 170, 190, 
                               210, 213, 234, 244, 246, 248, 252, 267, 269, 278])
 
@@ -283,11 +283,11 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
      decoder = vae.vae_decoder()[1]
      # decoder_params = vae.fit(plot_loss=True)
      # # Save decoder params
-     # with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'wb') as file:
+     # with open('src/test/decoders/decoder_parmas_1d_n300_GP_ep70', 'wb') as file:
      #      pickle.dump(decoder_params, file)
 
      # open decoder params from file
-     with open('src/test/decoders/decoder_parmas_1d_n300_GP', 'rb') as file:
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls_ep70', 'rb') as file:
           decoder_params = pickle.load(file)
 
      # Inference --------------------------------------------------------------
@@ -363,7 +363,7 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
           plt.title('VAE-lengthscale-{}'.format(ls))
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/gp_vae_ls_1d.png')
+     plt.savefig('src/test/plots/gp_vae_ls_1d_fixls_ep70.png')
      plt.show()
      plt.close()
 
@@ -543,7 +543,7 @@ def args_parser():
                          type=float, help="lengthscale of kernel")
      parser.add_argument("--sigma", default=0.0, 
                          type=float, help="random noise of training sample")
-     parser.add_argument("--jitter", default=1.0e-5, 
+     parser.add_argument("--jitter", default=1.0e-4, 
                          type=float, help="fixed additional noise to kernel diagonal for numerical stability")
      # VAE
      parser.add_argument("--n", default=300, 
@@ -556,7 +556,7 @@ def args_parser():
                          type=int, help="size of minibatch")
      parser.add_argument("--learning-rate", default=1.0e-3, 
                          type=float)
-     parser.add_argument("--num-epochs", default=50, 
+     parser.add_argument("--num-epochs", default=70, 
                          type=int)
      parser.add_argument("--num-train", default=1000, 
                          type=int)
@@ -570,10 +570,10 @@ def args_parser():
                          type=list,
                          help="index of observed locations")
 
-     parser.add_argument("--mcmc-args", default={"num_samples": 1000, 
-                                                  "num_warmup": 1000,
+     parser.add_argument("--mcmc-args", default={"num_samples": 10000, 
+                                                  "num_warmup": 10000,
                                                   "num_chains": 4,
-                                                  "thinning": 3}, 
+                                                  "thinning": 5}, 
                          type=dict)
 
      args = parser.parse_args()
@@ -589,14 +589,14 @@ if __name__ == "__main__":
      args = args_parser()
 
      x = jnp.arange(0, 1, 1/args.n)
-     # vae_mcmc(args, x, "gp", dat_noise=0.0) 
+     vae_mcmc(args, x, "gp", dat_noise=0.0) 
 
      # gp_krig(args, x, "gp", 0.0)
      
      # varying lengthscales
      lengths_list = [3.1, 0.05, 0.27]
 
-     vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
+     # vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
 
      # # context points are 1, 10, 100, 200
      obs_idx_dict = {}
