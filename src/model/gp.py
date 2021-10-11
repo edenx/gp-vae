@@ -13,6 +13,8 @@ from numpyro.diagnostics import hpdi
 from functools import partial
 import numpy as np
 
+import random
+
 
 # kernel functions
 # @jit
@@ -79,45 +81,50 @@ def exp_kernel2(x, z,
      return k
 
 
-# approximate k^*
+# approximate k^* over [0,1] grid
 def agg_kernel_grid(rng_key,
                     d, # spatial dim
                     m, # number of MC sample
-                    n, # number of intervals on each axis
+                    # n, # number of intervals on each axis
                     kernel, 
                     var, 
                     ls, 
                     # noise,
+                    grid1,
+                    grid2=None,
                     jitter=1.0e-6,
                     ):
 
-    xloc = dist.Uniform()
-    grid = jnp.arange(0, 1, 1/n)
+     xloc = dist.Uniform()
+     n = grid1.shape()[0]
+     # grid = jnp.arange(0, 1, 1/n)
 
-    # note that we must have a column vector for spatial locs
-    x = xloc.sample(rng_key, (n**d, m, d)) 
+     # note that we must have a column vector for spatial locs
+     x = xloc.sample(rng_key, (n**d, m, d)) 
 
     # 1D: sample from [0, 0.1], [0.1, 0.2] etc. uniformly
-    if d==1:
-      _x = x/n + jnp.expand_dims(grid, axis=(1, 2))
+     if d==1:
+          _x = x/n + jnp.expand_dims(grid1, axis=(1, 2))
 
-    elif d==2:
-      u, v = jnp.meshgrid(grid, grid)
-      _x = x/n + jnp.array([[u.flatten()], [v.flatten()]]).transpose((2, 1, 0))
-    
-    else:
-      raise Warning("Function is only implemented for d=1,2")
+     elif d==2:
+          if grid2 is None:
+               grid2 = grid1
+          u, v = jnp.meshgrid(grid1, grid2)
+          _x = x/n + jnp.array([[u.flatten()], [v.flatten()]]).transpose((2, 1, 0))
+          print(_x)
 
-    _kernel = partial(kernel, var=var, ls=ls, jitter=jitter)
-    __kernel = lambda x, z: jnp.sum(_kernel(x, z))
+     else:
+          raise Warning("Function is only implemented for d=1,2")
 
-    # the first dim of sample gives the batch dim, i.e. n**d
-    agg__kernel_v1 = vmap(__kernel, (0, None), 0)
-    agg__kernel_v2 = vmap(agg__kernel_v1, (None, 0), 1)
+     _kernel = partial(kernel, var=var, ls=ls, jitter=jitter)
+     __kernel = lambda x, z: jnp.sum(_kernel(x, z))
+
+     # the first dim of sample gives the batch dim, i.e. n**d
+     agg__kernel_v1 = vmap(__kernel, (0, None), 0)
+     agg__kernel_v2 = vmap(agg__kernel_v1, (None, 0), 1)
 
     # print(agg__kernel_v1(_x, _x[0]))
-
-    return agg__kernel_v2(_x, _x) / (m ** 2)
+     return agg__kernel_v2(_x, _x) / (m ** 2)
 
 # may want to rewrite this to include spatial dim 2
 class GP():
@@ -160,26 +167,13 @@ class GP():
           Returns:
                sampler for y.
           """
-          
-          if self.d==1:
 
-               if ls is None:
-                    ls = numpyro.sample("length", dist.InverseGamma(1,0.1))
-               if var is None:
-                    var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
-               if sigma is None:
-                    sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
-
-          elif self.d==2:
-
-               if ls is None:
-                    ls = numpyro.sample("length", dist.InverseGamma(3,1))
-               if var is None:
-                    var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
-               if sigma is None:
-                    sigma = 0.002
-          else:
-               raise NotImplementedError
+          if ls is None:
+               ls = numpyro.sample("length", dist.InverseGamma(1,0.1))
+          if var is None:
+               var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
+          if sigma is None:
+               sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
 
 
           ## Sanity check: if length/dx ->1: OK,  if length/dx -> Inf: covariance becomes degenerate
@@ -198,3 +192,56 @@ class GP():
                dist.MultivariateNormal(loc=jnp.zeros(x.shape[0]), covariance_matrix=k)
                )
           numpyro.sample("y", dist.Normal(f, sigma), obs=y)
+
+
+class LGCP(GP):
+     """Class for GP.
+
+     Attributes:
+          kernel - kernel function.
+          jitter (float) - small positive noise on diagonal entries.
+          d (int) - spatial dimension 1 or 2.
+     """
+     
+     def sample(self, m, x1, x2=None, y=None, ls=None, var=None, sigma=None, seed=0):
+          """Sample from LGCP with given grid(s) over [0,1], lengthscale and marginal vaiance.
+
+          Args:
+               m (int) - the number of MC samples to draw from Uniform distribution.
+               x1 (ndarray) - spatial grid over [0,1].
+               x2 (ndarray) - spatial grid over [0,1].
+               ls (float) - lengthscale of kernel.
+               var (float) - marginal variance of kernel.
+               sigma (float) - variance for additive noise of GP.
+               y (ndarray) - (function) value at x.
+          
+          Returns:
+               sampler for y.
+          """
+          if ls is None:
+               ls = numpyro.sample("length", dist.InverseGamma(1,0.1))
+          if var is None:
+               var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
+          if sigma is None:
+               sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
+
+          rng_key = random.PRNGKey(seed)
+
+          # sample Y according to the standard gaussian process formula
+          k = agg_kernel_grid(rng_key,
+                              self.d, # spatial dim
+                              m, # number of MC sample
+                              self.kernel, 
+                              var, 
+                              ls, 
+                              x1, x2,
+                              jitter=self.jitter
+                              )
+
+          f = numpyro.sample(
+               "f",
+               dist.MultivariateNormal(loc=jnp.zeros(x.shape[0]), covariance_matrix=k)
+               )
+          rate = numpyro.sample("rate", dist.Normal(f, sigma))
+
+          numpyro.sample("y", dist.Poisson(rate), obs=y)
