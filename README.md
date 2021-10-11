@@ -1,7 +1,11 @@
 # The Repo
 This repo contains code for training and doing inference with VAE. 
 
-`src/model` contains implementation of GP (`gp.py`), VAE (`vae.py`) and MCMC (`inference.py`) based on `Numpyro`. `src/test/toy_examples.py` hosts toy 1D examples including, cubic function, trignometric function and draws from GP. `src/test/test_model.py` hosts fucntions for testing each module in `src/model`. 
+`src/model` contains implementation of GP (`gp.py`), VAE (`vae.py`) and MCMC/krigging (`inference.py`) based on `Numpyro`. `src/test/test_model.py` hosts fucntions for testing each module in `src/model`. `src/test/toy_examples.py` hosts toy 1D examples including, cubic function, trignometric function and draws from GP. 
+
+We also include GP as a bench mark for the prediction, in particular under the subclass `GPInference` of `Inference`, krigging is implemented in `gp_regression` and `gp_prediction`; generic inference with MCMC is in `regression`. Toy examples for the two methods are contained in main functions `gp_krig` and `gp_mcmc` respectively. Example for inference with MCMC and VAE prior is in function `vae_mcmc`.
+
+All the plots are in the folder `src/test/plots`.
 
 To run the `src/test/toy_examples.py` in the command line, type in e.g. `python src/test/toy_examples.py --num-epochs 50 --noise 0.01`.
 
@@ -27,5 +31,6 @@ Several extensions to be made
 - [ ] Inference:
      - [ ] How to better facilitate distinguishing 'lengthscale' (roughly the same idea as GP, but we do not have an explicit variable to model it) and noise in the data? 
 - [ ] Benchmark:
+     - [x] Add krigging
      - [ ] Add SVGP as benchmark for posterior prediction. 
-     - [ ]Try Neural process as well?
+     - [ ] Try Neural process as well?

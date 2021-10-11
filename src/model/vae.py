@@ -18,7 +18,24 @@ from numpyro import optim
 from numpyro.infer import SVI, Trace_ELBO, Predictive
 from numpyro.diagnostics import hpdi
 
-class VAE:
+# update the training to allow variance to be sampled along with ls
+class VAE():
+     """ 
+     Implementation of VAE based on stax with 2 layer NN. 
+
+     Attributes:
+          gp             (cls) - GP class object.
+          hidden_dims    (list) - dimension of hidden layers for encoder (symmetric to  decoder).
+          z_dim          (int) - dimension of latent rerpresentation (bottleneck).
+          out_dim        (int) - output dimension, usually same as input data dimension.
+          batch_size     (int) - number of samples in a minibatch.
+          num_epochs     (int) - number of training epochs.
+          num_train      (int) - number of batches in training.
+          num_test       (int) - number of batches in testing.
+          learning_rate  (float) - learning rate for optimiser.
+          x              (ndarrray) - spatial/temporal locations. 
+          seed           (int) - random seed.
+     """
      def __init__(
           self, 
           gp, # GP object
@@ -43,16 +60,18 @@ class VAE:
           self.learning_rate = learning_rate
           self.num_epochs = num_epochs
           self.num_train = num_train
-          self.num_test = num_train
+          self.num_test = num_test
           self.x = x
           self.rng_key = random.PRNGKey(seed)
           
-          # Predictive function for sampling GP training set
+          # Predictive function for sampling GP training sets
           self.gp_predictive = None
           self.svi = None       
      
      # for loop within stax.serial? -- general way of stacking?
      def vae_encoder(self):
+          """Encoder network of VAE.
+          """
           return stax.serial(
                stax.Dense(self.hidden_dims[0], W_init=stax.randn()),
                stax.Relu,
@@ -66,6 +85,8 @@ class VAE:
           )
 
      def vae_decoder(self):
+          """Decoder network of VAE.
+          """
           return stax.serial(
                stax.Dense(self.hidden_dims[1], W_init=stax.randn()),
                stax.Relu,
@@ -75,6 +96,14 @@ class VAE:
           )
      
      def vae_model(self, batch):
+          """Generation with decoder.
+
+          Args: 
+               batch (ndarray) - data batch.
+
+          Returns:
+               sample from pushed forward measure of z by decoder network.
+          """
           batch = jnp.reshape(batch, (batch.shape[0], -1))
           decode = numpyro.module(
                "decoder", 
@@ -83,12 +112,20 @@ class VAE:
           z = numpyro.sample(
                "z", 
                dist.Normal(jnp.zeros((self.z_dim,)), jnp.ones((self.z_dim,))))
-          gen_loc = decode(z)
+          f = decode(z)
 
-          return numpyro.sample("obs", dist.Normal(gen_loc, .1), obs=batch) 
+          return numpyro.sample("obs", dist.Normal(f, .1), obs=batch) 
 
 
      def vae_guide(self, batch):
+          """Inference with encoder.
+
+          Args: 
+               batch (ndarray) - data batch.
+
+          Returns:
+               sample from z.
+          """
           batch = jnp.reshape(batch, (batch.shape[0], -1))
           encode = numpyro.module(
                "encoder", 
@@ -101,15 +138,29 @@ class VAE:
 
      @partial(jit, static_argnums=(0,))
      def epoch_train(self, rng_key, svi_state):
+          """Train VAE with samples drawn from GP with random lengthscale in each batch.
 
+          Args:
+               rng_key (ndarray) - a PRNGKey used as the random key.
+               svi_state - current state of SVI.
+
+          Returns:
+               sum of ELBO loss and current state of SVI.
+          """
           def body_fn(i, val):
                rng_key_i = random.fold_in(rng_key, i)
-               rng_key_i, rng_key_ls = random.split(rng_key_i)
+               rng_key_i, rng_key_ls, rng_key_var, rng_key_sigma = random.split(rng_key_i, 4)
 
                loss_sum, svi_state = val # val -- svi_state
+
                # directly draw sample from the GP for a random lengthscale
-               length_i = numpyro.sample("length", dist.Beta(0.2, 1.0), rng_key=rng_key_ls)
-               batch = self.gp_predictive(rng_key_i, length_i, self.x)
+               length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
+               var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
+               sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
+               batch = self.gp_predictive(rng_key_i, self.x
+               , ls=length_i, var=var_i, sigma=sigma_i
+               )
+               
 
                # `update` returns (svi_state, loss)
                svi_state, loss = self.svi.update(svi_state, batch['y']) 
@@ -118,15 +169,28 @@ class VAE:
 
           return lax.fori_loop(0, self.num_train, body_fn, (0.0, svi_state))
      
-     @partial(jit, static_argnums=(0,))
+     # @partial(jit, static_argnums=(0,))
      def eval_test(self, rng_key, svi_state):
+          """Test VAE with samples drawn from GP with random lengthscale in each batch.
 
+          Args:
+               rng_key (ndarray) - a PRNGKey used as the random key.
+               svi_state - current state of SVI.
+
+          Returns:
+               average ELBO loss evaluated on test data sets.
+          """
           def body_fn(i, loss_sum):
                rng_key_i = random.fold_in(rng_key, i) 
-               rng_key_i, rng_key_ls = random.split(rng_key_i)
+               rng_key_i, rng_key_ls, rng_key_var, rng_key_sigma = random.split(rng_key_i, 4)
                
-               length_i = numpyro.sample("length", dist.Beta(0.2, 1.0), rng_key=rng_key_ls)
-               batch = self.gp_predictive(rng_key_i, length_i, self.x)
+               length_i = numpyro.sample("length", dist.InverseGamma(1,.1), rng_key=rng_key_ls)
+               var_i = numpyro.sample("var", dist.LogNormal(0,0.1), rng_key=rng_key_var)
+               sigma_i = numpyro.sample("noise", dist.HalfNormal(0.1), rng_key=rng_key_sigma)
+ 
+               batch = self.gp_predictive(rng_key_i, self.x
+               , ls=length_i, var=var_i, sigma=sigma_i
+               )
 
                loss = self.svi.evaluate(svi_state, batch['y']) / self.batch_size
                loss_sum += loss
@@ -138,6 +202,14 @@ class VAE:
           return loss
      
      def fit(self, plot_loss=True):
+          """Train VAE with Adam optimiser and ELBO.
+
+          Args:
+               plot_loss (bool) - if True, plot the loss of test set each epoch
+
+          Returns:
+               Decoder network and optimised parameters of the decoder.
+          """
           adam = optim.Adam(self.learning_rate)
           self.svi = SVI(
                self.vae_model, 
@@ -145,14 +217,14 @@ class VAE:
                adam, 
                Trace_ELBO()
           )
-          encoder_nn = self.vae_encoder()
-          decoder_nn = self.vae_decoder()
+          # encoder_nn = self.vae_encoder()
+          # decoder_nn = self.vae_decoder()
           rng_key, rng_key_samp, rng_key_init = random.split(self.rng_key, 3)
 
           self.gp_predictive = Predictive(self.gp.sample, num_samples=self.batch_size)
 
           # initialise with a sample batch
-          sample_batch = self.gp_predictive(rng_key=rng_key_samp, ls=0.1, x=self.x)
+          sample_batch = self.gp_predictive(rng_key=rng_key_samp, x=self.x)
           
           svi_state = self.svi.init(rng_key_init, sample_batch['y'])
           test_loss_list = []
@@ -170,15 +242,18 @@ class VAE:
                          i, test_loss, time.time() - t_start
                     )
                )
+          
+               if np.isnan(test_loss): break
 
           if plot_loss:
                plt.figure()
-               plt.plot(np.arange(0, self.num_epochs, 1), test_loss_list)
+               plt.plot(np.arange(0, self.num_epochs, 1)[0:len(test_loss_list)], test_loss_list)
                plt.xlabel("epochs")
                plt.ylabel("test error")
+               plt.savefig('src/test/plots/vae_lost.png')
                plt.show()
                plt.close()
 
-          # decoder and optimal parameters for decoder
-          return decoder_nn[1], self.svi.get_params(svi_state)["decoder$params"]
+          # return optimal parameters for decoder
+          return self.svi.get_params(svi_state)["decoder$params"]
           
