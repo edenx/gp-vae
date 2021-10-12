@@ -253,6 +253,87 @@ class VAEInference(Inference):
                     obs=y[obs_idx])
 
 
+class PoiVAEInference(VAEInference):
+
+     def fit(self):
+          """Function to do MCMC on regression.
+
+          Args:
+               plot (bool) - if True plot the posterior prediction.
+          
+          Returns:
+               prior and posterior predictions.
+          """
+          rng_key, rng_key_prior, rng_key_post, rng_key_pred = random.split(self.rng_key, 4)
+
+          # draws from prior
+          prior_predictive = Predictive(self.regression, num_samples=1000)
+          prior_predictions = prior_predictive(rng_key_prior)
+          # after training, we sample from the posterior 
+          post_samples = self.run_mcmc(rng_key_post)
+
+          # get samples from posterior predictive distribution
+          predictive = Predictive(self.regression, post_samples)
+          predictions = predictive(rng_key_pred)
+          # print(predictive(rng_key_pred))
+
+          return prior_predictions, predictions
+
+     def regression(self, y=None, obs_idx=None):
+          """Regression function for MCMC.
+
+          Args:
+               y (ndarray) - function values (np.nan at unobserved locations).
+               obs_idx (nd_array) - index of observation locations.
+          """
+
+          # sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
+          z = numpyro.sample("z", 
+                              dist.Normal(jnp.zeros(self.z_dim), jnp.ones(self.z_dim)))
+          rate = numpyro.deterministic("rate", self.decoder(self.decoder_params, z))
+
+          if y is None: # durinig prediction
+               numpyro.sample("y_pred", dist.Poisson(rate))
+          else: # during inference
+               numpyro.sample(
+                    "y", 
+                    dist.Poisson(rate[obs_idx]), 
+                    obs=y[obs_idx])
+
+
+     def plot_prediction(self, pred, x=None):
+          """plot 1D posterior prediction.
+
+          Args:  
+               y_pred (ndarray) - prediction.
+               x (ndarray) - spatial locations for y.
+          """
+          if x is None:
+               x = self.x
+
+          y_pred = pred["y_pred"]
+          rate_pred = pred["rate"]
+
+          rate_mean =jnp.mean(rate_pred, axis=0)
+          rate_hpdi =hpdi(rate_pred, 0.9)
+
+          # print(np.unique(np.isnan(y_pred), return_counts=True))
+
+          # plt.figure()
+
+          plt.fill_between(x, 
+                              rate_hpdi[0], rate_hpdi[1], 
+                              alpha=0.4, interpolate=True)
+          plt.plot(x, rate_mean, label="rate mean prediction")
+          # plt.scatter(self.x, self.rate, c="red", alpha=0.7, label="")
+          if self.ground_truth is not None:
+               plt.plot(self.ground_truth["x"], 
+                         self.ground_truth["rate"], label="ground truth rate")
+               plt.scatter(self.ground_truth["x"], 
+                         self.ground_truth["y"], 
+                         color="orange", label="ground truth")
+
+
 class GPInference(Inference):
      """Class for inference with GP prior.
 

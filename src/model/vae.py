@@ -160,7 +160,6 @@ class VAE():
                batch = self.gp_predictive(rng_key_i, self.x
                , ls=length_i, var=var_i, sigma=sigma_i
                )
-               
 
                # `update` returns (svi_state, loss)
                svi_state, loss = self.svi.update(svi_state, batch['y']) 
@@ -256,4 +255,40 @@ class VAE():
 
           # return optimal parameters for decoder
           return self.svi.get_params(svi_state)["decoder$params"]
-          
+
+
+
+class PoiVAE(VAE):
+
+     def vae_decoder(self):
+          """Decoder network of VAE.
+          """
+          return stax.serial(
+               stax.Dense(self.hidden_dims[1], W_init=stax.randn()),
+               stax.Relu,
+               stax.Dense(self.hidden_dims[0], W_init=stax.randn()),
+               stax.Relu,
+               stax.Dense(self.out_dim, W_init=stax.randn()),
+               stax.exp
+          )
+
+     def vae_model(self, batch):
+          """Generation with decoder.
+
+          Args: 
+               batch (ndarray) - data batch.
+
+          Returns:
+               sample from pushed forward measure of z by decoder network.
+          """
+          batch = jnp.reshape(batch, (batch.shape[0], -1))
+          decode = numpyro.module(
+               "decoder", 
+               self.vae_decoder(), 
+               (self.batch_size, self.z_dim))
+          z = numpyro.sample(
+               "z", 
+               dist.Normal(jnp.zeros((self.z_dim,)), jnp.ones((self.z_dim,))))
+          rate = decode(z)
+
+          return numpyro.sample("obs", dist.Poisson(rate), obs=batch) 

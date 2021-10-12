@@ -194,7 +194,7 @@ class GP():
           numpyro.sample("y", dist.Normal(f, sigma), obs=y)
 
 
-class LGCP(GP):
+class PoiGP(GP):
      """Class for GP.
 
      Attributes:
@@ -203,6 +203,7 @@ class LGCP(GP):
           d (int) - spatial dimension 1 or 2.
      """
      
+     # note that, there is no noise in the current implementation
      def sample(self, m, x1, x2=None, y=None, ls=None, var=None, sigma=None, seed=0):
           """Sample from LGCP with given grid(s) over [0,1], lengthscale and marginal vaiance.
 
@@ -218,12 +219,14 @@ class LGCP(GP):
           Returns:
                sampler for y.
           """
+          if x2 is None:
+               x2 = x1
           if ls is None:
                ls = numpyro.sample("length", dist.InverseGamma(1,0.1))
           if var is None:
                var = numpyro.sample("var", dist.LogNormal(0.0, 0.1))
-          if sigma is None:
-               sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
+          # if sigma is None:
+          #      sigma = numpyro.sample("noise", dist.HalfNormal(0.1))
 
           rng_key = random.PRNGKey(seed)
 
@@ -240,8 +243,8 @@ class LGCP(GP):
 
           f = numpyro.sample(
                "f",
-               dist.MultivariateNormal(loc=jnp.zeros(x.shape[0]), covariance_matrix=k)
+               dist.MultivariateNormal(loc=jnp.zeros(x1.shape[0]), covariance_matrix=k)
                )
-          rate = numpyro.sample("rate", dist.Normal(f, sigma))
-
+          # note that there is no noise
+          rate = numpyro.deterministic("rate", jnp.exp(f))
           numpyro.sample("y", dist.Poisson(rate), obs=y)

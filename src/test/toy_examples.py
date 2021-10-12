@@ -367,85 +367,6 @@ def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
      plt.show()
      plt.close()
 
-# def gp_mcmc(args, example, dat_noise=0):
-
-#      assert args.d is 1
-
-#      if args.kernel == "exponential2":
-#           kernel = exp_kernel2
-#      # elif args.kernel == "exponential1":
-#      #      kernel = exp_kernel1
-#      else:
-#           raise NotImplementedError
-     
-#      if example == "cubic":
-#           example_func = example_cubic
-#      elif example == "trig":
-#           example_func = example_trig
-#      elif example == "gp":
-#           example_func = example_gp
-#      else:
-#           raise NotImplementedError
-
-#      # n points over [0,1]
-#      x = jnp.arange(0, 1, 1/args.n)
-
-#      # context points are 1, 10, 100, 200
-#      obs_idx_dict = {}
-#      # obs_idx_dict['1'] = [100]
-#      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
-#      # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
-#      # obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
-
-#      rng_key = random.PRNGKey(args.seed+1)
-
-#      # generate data for inference
-#      ground_truth, y = example_func(rng_key, args.n, x, sigma=dat_noise)
-
-     
-#      inference = GPInference(
-#           kernel,
-#           args.d,
-#           x, None, # None for generated data, y_filtered
-#           args.obs_idx,
-#           args.mcmc_args,
-#           args.seed,
-#           ground_truth
-#           )
-
-#      plt.figure(figsize=(15, 12.5))
-
-#      # Inference
-#      for i, item in enumerate(obs_idx_dict.items()):
-#           print(i)
-#           k, obs_idx = item
-#           obs_idx = jnp.asarray(obs_idx)
-
-#           # mask unobserved y
-#           mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
-#           unobs_idx = jnp.arange(args.n)[~mask]
-#           y_filtered = ops.index_update(y, unobs_idx, np.NaN)
-
-#           # update observation locations
-#           inference.obs_idx = obs_idx
-#           inference.y = y_filtered
-
-#           # obtain predictions
-#           prior_pred, pred = inference.fit(plot=False)
-
-#           ## posterior
-#           plt.subplot(2,1,i+1)
-#           inference.plot_prediction(prior_pred)
-#           plt.title('Posterior-'+k)
-
-#           plt.subplot(2,1,i+2)
-#           inference.plot_prediction(pred)
-#           plt.title('Posterior-'+k)
-     
-#      plt.tight_layout()
-#      # plt.savefig('src/test/plots/gp_mcmc_{}.png'.format(example))
-#      plt.show()
-#      plt.close()
 
 
 def gp_krig(args, x, example, dat_noise=0):
@@ -612,3 +533,88 @@ if __name__ == "__main__":
      # plot_y=True,
      # num_samp=10
      # )
+
+
+
+
+
+
+# def gp_mcmc(args, example, dat_noise=0):
+
+#      assert args.d is 1
+
+#      if args.kernel == "exponential2":
+#           kernel = exp_kernel2
+#      # elif args.kernel == "exponential1":
+#      #      kernel = exp_kernel1
+#      else:
+#           raise NotImplementedError
+     
+#      if example == "cubic":
+#           example_func = example_cubic
+#      elif example == "trig":
+#           example_func = example_trig
+#      elif example == "gp":
+#           example_func = example_gp
+#      else:
+#           raise NotImplementedError
+
+#      # n points over [0,1]
+#      x = jnp.arange(0, 1, 1/args.n)
+
+#      # context points are 1, 10, 100, 200
+#      obs_idx_dict = {}
+#      # obs_idx_dict['1'] = [100]
+#      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+#      # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+#      # obs_idx_dict['200'] = list(rd.sample(np.arange(args.n).tolist(), k=200))
+
+#      rng_key = random.PRNGKey(args.seed+1)
+
+#      # generate data for inference
+#      ground_truth, y = example_func(rng_key, args.n, x, sigma=dat_noise)
+
+     
+#      inference = GPInference(
+#           kernel,
+#           args.d,
+#           x, None, # None for generated data, y_filtered
+#           args.obs_idx,
+#           args.mcmc_args,
+#           args.seed,
+#           ground_truth
+#           )
+
+#      plt.figure(figsize=(15, 12.5))
+
+#      # Inference
+#      for i, item in enumerate(obs_idx_dict.items()):
+#           print(i)
+#           k, obs_idx = item
+#           obs_idx = jnp.asarray(obs_idx)
+
+#           # mask unobserved y
+#           mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
+#           unobs_idx = jnp.arange(args.n)[~mask]
+#           y_filtered = ops.index_update(y, unobs_idx, np.NaN)
+
+#           # update observation locations
+#           inference.obs_idx = obs_idx
+#           inference.y = y_filtered
+
+#           # obtain predictions
+#           prior_pred, pred = inference.fit(plot=False)
+
+#           ## posterior
+#           plt.subplot(2,1,i+1)
+#           inference.plot_prediction(prior_pred)
+#           plt.title('Posterior-'+k)
+
+#           plt.subplot(2,1,i+2)
+#           inference.plot_prediction(pred)
+#           plt.title('Posterior-'+k)
+     
+#      plt.tight_layout()
+#      # plt.savefig('src/test/plots/gp_mcmc_{}.png'.format(example))
+#      plt.show()
+#      plt.close()
