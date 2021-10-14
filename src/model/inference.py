@@ -1,3 +1,4 @@
+from pickle import FALSE
 import time
 import os
 import numpy as np
@@ -92,7 +93,7 @@ class Inference():
           )
 
           mcmc.run(rng_key, y=self.y, obs_idx=self.obs_idx)
-          mcmc.print_summary()
+          mcmc.print_summary(exclude_deterministic=False)
           print("\nMCMC elapsed time:", time.time() - start)
 
           return mcmc.get_samples()

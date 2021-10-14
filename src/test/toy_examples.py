@@ -230,6 +230,151 @@ def vae_mcmc(args, x, example, dat_noise=0.001):
      plt.close()
 
 
+def vae_mcmc_context(args, x, var=0.5, ls=0.05, dat_noise=0):
+     """ Plot posterior predictions for GP examples varying lengthscales 
+     [2.96, 0.05, 0.27].
+     args: namespace, args of GP, VAE and Inference
+     example: string, example function used to generate data
+     dat_noise: float, added noise to generated data
+     """
+
+     assert args.d is 1
+
+     # n points over [0,1]
+     # x = jnp.arange(0, 1, 1/args.n) # change it to input
+
+     rng_key = random.PRNGKey(args.seed)
+     # context points are 1, 10, 40, 100
+     obs_idx_dict = {}
+     obs_idx_dict['1'] = [100]
+     obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
+     obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=40))
+     # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+
+     gp_y = GP(kernel=exp_kernel2, jitter=args.jitter, d=1)
+     y_Predictive = Predictive(gp_y.sample, num_samples=1)
+     y_ = partial(y_Predictive, x=x, var=var, sigma=dat_noise)
+     y = y_(rng_key=rng_key, ls=ls)["y"][0]
+     ground_truth = {"x": x, 
+                    "y": y}
+     plt.figure()
+     plt.plot(x, y)
+     plt.show()
+     plt.close()
+
+
+     # setup GP ---------------------------------------------------------------
+     if args.kernel == "exponential2":
+          kernel = exp_kernel2
+     # elif args.kernel == "exponential1":
+     #      kernel = exp_kernel1
+     else:
+          raise NotImplementedError
+     # ls, var and noise are random in training
+     gp = GP(
+          kernel=kernel, 
+          jitter=args.jitter, 
+          d=args.d)
+     
+     # VAE training -----------------------------------------------------------
+     vae = VAE(
+          gp,
+          args.hidden_dims, # list
+          args.z_dim, # bottleneck
+          args.n,
+          args.batch_size, 
+          args.learning_rate,
+          args.num_epochs,
+          args.num_train,
+          args.num_test,
+          x,
+          args.seed)
+
+     decoder = vae.vae_decoder()[1]
+     # decoder_params = vae.fit(plot_loss=True)
+     # # Save decoder params
+     # with open('src/test/decoders/decoder_parmas_1d_n300_GP_ep70', 'wb') as file:
+     #      pickle.dump(decoder_params, file)
+
+     # open decoder params from file
+     with open('src/test/decoders/decoder_parmas_1d_n300_GP_fixls_ep70', 'rb') as file:
+          decoder_params = pickle.load(file)
+
+     # Inference --------------------------------------------------------------
+
+     # VAE inference
+     inference_vae = VAEInference(
+          decoder, decoder_params,
+          args.z_dim, args.d,
+          x, None, # None for generated data, y_filtered
+          args.obs_idx,
+          args.mcmc_args,
+          args.seed
+          )
+     # exact GP inference
+     inference_gp = GPInference(
+          kernel,
+          args.d,
+          x, None, # None for generated data, y_filtered
+          args.obs_idx,
+          args.mcmc_args,
+          args.seed
+          )
+
+     # # plot samples fromtrained VAE prior -------------------------------------
+     # vae_predictive = Predictive(inference_vae.regression, num_samples=10)
+     # rng_key, rng_key_predict = random.split(random.PRNGKey(1))
+     # vae_draws = vae_predictive(rng_key_predict)['y_pred']
+
+     # plt.figure()
+     # for i in range(10):
+     #      plt.plot(x, vae_draws[i])
+     # plt.show()
+     # plt.close()
+
+     # plot for increasing context points -----------------------------------------------------
+     plt.figure(figsize=(19, 12.5))
+     for i, item in enumerate(obs_idx_dict.items()):
+          
+          k, obs_idx = item
+          print("k=",k)
+
+          # rng_key, rng_key_i = random.split(rng_key)
+          # generate data for inference
+          
+          # ground_truth, y = example_gp(rng_key, x, ls=ls, noise=dat_noise, plot_y=False)
+          obs_idx = jnp.asarray(obs_idx)
+          # mask unobserved y
+          mask = jnp.zeros(args.n, dtype=bool).at[obs_idx].set(True)
+          unobs_idx = jnp.arange(args.n)[~mask]
+          y_filtered = ops.index_update(y, ops.index[unobs_idx], np.nan)
+
+          # update observation locations, y and ground truth
+          inference_vae.obs_idx = obs_idx
+          inference_vae.y = y_filtered
+          inference_vae.ground_truth = ground_truth
+
+          inference_gp.obs_idx = obs_idx
+          inference_gp.y = y_filtered
+          inference_gp.ground_truth = ground_truth
+
+          # obtain predictions
+          _, pred_vae = inference_vae.fit(plot=False)
+          _, pred_gp = inference_gp.gp_fit(plot=False)
+
+          ## posterior
+          plt.subplot(2,4,i+1)
+          inference_vae.plot_prediction(pred_gp, x=jnp.delete(x, obs_idx))
+          plt.title('GP-context-{}'.format(k))
+
+          plt.subplot(2,4,i+5)
+          inference_vae.plot_prediction(pred_vae)
+          plt.title('VAE-context-{}'.format(k))
+     
+     plt.tight_layout()
+     plt.savefig('src/test/plots/gp_vae_context_1d.pdf')
+     plt.show()
+     plt.close()
 
 def vae_mcmc_ls(args, x, lengths_list, var=0.5, dat_noise=0):
      """ Plot posterior predictions for GP examples varying lengthscales 
@@ -510,14 +655,15 @@ if __name__ == "__main__":
      args = args_parser()
 
      x = jnp.arange(0, 1, 1/args.n)
-     vae_mcmc(args, x, "gp", dat_noise=0.0) 
+     # vae_mcmc(args, x, "gp", dat_noise=0.0) 
 
      # gp_krig(args, x, "gp", 0.0)
      
      # varying lengthscales
-     lengths_list = [3.1, 0.05, 0.27]
+     # lengths_list = [3.1, 0.05, 0.27]
 
      # vae_mcmc_ls(args, x, lengths_list, dat_noise=0.001)
+     vae_mcmc_context(args, x, var=1, ls=0.05, dat_noise=0.001)
 
      # # context points are 1, 10, 100, 200
      obs_idx_dict = {}
