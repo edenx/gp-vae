@@ -249,7 +249,7 @@ def vae_mcmc_context(args, x, var=0.5, ls=0.05, dat_noise=0):
      obs_idx_dict['1'] = [100]
      obs_idx_dict['10'] = [20, 23, 100, 110, 117, 130, 133, 140, 170, 190]
      obs_idx_dict['40'] = list(rd.sample(np.arange(args.n).tolist(), k=40))
-     # obs_idx_dict['100'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
+     obs_idx_dict['80'] = list(rd.sample(np.arange(args.n).tolist(), k=100))
 
      gp_y = GP(kernel=exp_kernel2, jitter=args.jitter, d=1)
      y_Predictive = Predictive(gp_y.sample, num_samples=1)
@@ -372,7 +372,7 @@ def vae_mcmc_context(args, x, var=0.5, ls=0.05, dat_noise=0):
           plt.title('VAE-context-{}'.format(k))
      
      plt.tight_layout()
-     plt.savefig('src/test/plots/gp_vae_context_1d.pdf')
+     plt.savefig('src/test/plots/gp_vae_context_1d.jpg')
      plt.show()
      plt.close()
 
